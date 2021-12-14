@@ -142,6 +142,8 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE):
             slide_id = len(rowlist) + 1
 
             new_row = {"tile_id": slide_id,
+                       "index_x": x,
+                       "index_y": y,
                        "wsi_x": wsi_tiles_x[x],
                        "wsi_y": wsi_tiles_y[y],
                        "mask_x": mask_tiles_x[x],
@@ -153,7 +155,7 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE):
             rowlist.append(new_row)
 
     # Create reference dataframe
-    colnames = ["tile_id", "wsi_x", "wsi_y", "mask_x", "mask_y", "filename", "tissue_ratio"]
+    colnames = ["tile_id", "index_x", "index_y", "wsi_x", "wsi_y", "mask_x", "mask_y", "filename", "tissue_ratio"]
     ref_df = pd.DataFrame(data=rowlist, columns=colnames)
 
     # Remove filenames for empty tiles
