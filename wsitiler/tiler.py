@@ -22,7 +22,7 @@ from skimage.filters import threshold_otsu
 from skimage.morphology import remove_small_objects, opening,closing, square
 from scipy.ndimage import binary_fill_holes
 
-import wsitiler.normalizer as norm
+import wsitiler.normalizer as norm #TODO: fix
 
 # MICRONS_PER_TILE defines the tile edge length used when breaking WSIs into smaller images (m x m)
 MICRONS_PER_TILE = 256
@@ -39,6 +39,12 @@ HE_REF_IMG = str(Path(__file__).absolute() / "normalizer/macenko_reference_img.p
 NORMALIZER_CHOICES= ["None","macenko"]
 # SUPPORTED_WSI_FORMATS defines the WSI formats supported by Openslide.
 SUPPORTED_WSI_FORMATS = [".svs",".ndpi",".vms",".vmu",".scn",".mrxs",".tiff",".svslide",".tif",".bif"]
+
+# Log Levels
+LOG_ERROR = 0
+LOG_WARNING = 1
+LOG_INFO = 2
+LOG_DEBUG = 3
 
 def setup_normalizer(normalizer_choice, ref_img_path):
     """
@@ -245,10 +251,27 @@ if __name__ == '__main__':
     ap.add_argument('-z', '--final_tile_size', default=FINAL_TILE_SIZE, type=int, help="Defines the final tile size in pixels (N x N), give zero (0) for no resizing. If processed tile isn't this size, it will be interpolated to fit. Default: [%d]" % FINAL_TILE_SIZE)
     ap.add_argument('-f', '--foreground_threshold', default=MIN_FOREGROUND_THRESHOLD, type=int, help="Defines the minimum tissue/background ratio for a tile to be considered foreground. Default: [%d]" % MIN_FOREGROUND_THRESHOLD)
     ap.add_argument('-r', '--normalizer_reference', default=HE_REF_IMG, type=str, help='H & E image used as a reference for normalization. Default: [%s]' % HE_REF_IMG )
-    ap.add_argument('-v', '--verbose', action='count', help='Print updates and reports as program executes.') #TODO: setup logging appropriately
+    ap.add_argument('-v', '--verbose', action='count', help='Print updates and reports as program executes. Provide the following number of "v" for the following settings: [%d: Error. %d: Warning, %d: Info, %d: Debug]' % (LOG_ERROR,LOG_WARNING,LOG_INFO,LOG_DEBUG) ) #TODO: setup logging appropriately
     args = vars(ap.parse_args())
     # args = vars(ap.parse_args(["-i","C:/Users/clemenj/Documents/Data_local/testWSI/","-o","C:/Users/clemenj/Documents/Data_local/testWSI/test_tiles/"]))# TODO: remove
-    # args = vars(ap.parse_args(["-i","/home/clemenj/Data/testWSI/","-o","/home/clemenj/Data/testWSI/test_tiles/","-c","16","-n", "macenko"]))# TODO: remove
+    # args = vars(ap.parse_args(["-i","/home/clemenj/Data/testWSI/","-o","/home/clemenj/Data/testWSI/test_tiles/","-c","16","-n", "macenko","-vvvv"]))# TODO: remove
+
+    # Validate arguments
+    if args['verbose'] is None:
+        args['verbose'] = LOG_ERROR
+    #TODO: check normalizer reference
+    #TODO: check input exists
+
+    # INFO
+    if(args['verbose'] >= LOG_INFO):
+        print("Starting tiling run")
+
+        # DEBUG
+        if(args['verbose'] >= LOG_DEBUG):
+            import time
+            import tracemalloc
+            total_start_time = time.time()
+            print("Run Arguments: %s" % args)
 
     #Prepare output path
     if os.path.isdir(args["output"]):
@@ -264,10 +287,25 @@ if __name__ == '__main__':
         if args["input"].endswith(tuple(SUPPORTED_WSI_FORMATS)):
             all_wsi_paths.append(Path(args["input"]))
 
+    # INFO
+    if(args['verbose'] >= LOG_INFO):
+        print("Found WSI images. Starting Processing")
+        # DEBUG: report WSIs found
+        if(args['verbose'] >= LOG_DEBUG):
+            print("The following WSIs were found:")
+            for i,aPath in enumerate([str(s) for s in all_wsi_paths]):
+                print("%d: %s" % (i+1,aPath) )
+
     # Process wsi images
-    # wsi=all_wsi_paths[0] # TODO: remove
-    for wsi in all_wsi_paths: #TODO: restore
-        # setup_start_time = time.time() # TODO: remove
+    # i=0; wsi=all_wsi_paths[i] # TODO: remove
+    for i,wsi in enumerate(all_wsi_paths):
+        # INFO
+        if(args['verbose'] >= LOG_INFO):
+            print("%d - Processing %s" % (i+1,str(wsi)))
+            # DEBUG: time total tiling time per WSI
+            if(args['verbose'] >= LOG_DEBUG):
+                setup_start_time = time.time()
+    
         # Prepare output path for wsi's tiles
         wsi_name = wsi.name.split(".")[0]
         out_tile_path = outpath / wsi_name
@@ -275,19 +313,45 @@ if __name__ == '__main__':
         #Open WSI
         wsi_image = openslide.open_slide(str(wsi))
         # TODO: catch errors opening, report and skip
-
-        # Execute tiling
+        
+        # INFO
+        if(args['verbose'] >= LOG_INFO):
+            print("%d - Generating tile reference and mask" % (i+1) )
+            # DEBUG: time tile prep
+            if(args['verbose'] >= LOG_DEBUG):
+                tile_ref_start_time = time.time()
+        
+        # Prepare tiling reference
         (ref_df, ppt_x, ppt_y) = prepare_tiles(wsi=wsi_image, output=str(out_tile_path), mpt=args["microns_per_tile"])
+
+        # DEBUG: time tile prep
+        if(args['verbose'] >= LOG_DEBUG):
+            tile_ref_end_time = time.time()
+            print("%d - Tile Reference Time: %f" % (i+1, tile_ref_end_time-tile_ref_start_time) )
 
         # Split non-empty tiles evenly for multiprocessing
         tile_data_lists = np.array_split(ref_df.loc[ref_df['tissue_ratio'] > args['foreground_threshold'] ], args['cores'])
 
+        # INFO
+        if(args['verbose'] >= LOG_INFO):
+            print("%d - Initializing normalizer" % (i+1) )
+            # DEBUG: Report normalizer options
+            if(args['verbose'] >= LOG_DEBUG):
+                print("%d - Normalizer method: %s \nNormalizer reference: %s" % (i+1,args['normalizer'],args['normalizer_reference']) )
+
         # Prepare normalizer
         normalizer = setup_normalizer(normalizer_choice=args['normalizer'], ref_img_path=args['normalizer_reference'])
 
+        # INFO
+        if(args['verbose'] >= LOG_INFO):
+            print("%d - Exporting tiles" % (i+1) )
+            # DEBUG: Report multiprocessing pool
+            if(args['verbose'] >= LOG_DEBUG):
+                print("%d - Pool size: %d cores" % (i+1,args['cores']) )
+                async_start_time = time.time()
+                
         # Process tiles in parallel        
         pool = mp.Pool(args['cores'])
-        # async_start_time = time.time() # TODO: remove
         for a_tile_list in tile_data_lists:
             pool.apply_async(func=export_tiles,kwds={'tile_data':a_tile_list,'wsi':str(wsi),'normalizer':normalizer,
                                                         'tile_dims':{'x':ppt_x,'y':ppt_y},'output':str(out_tile_path),
@@ -295,12 +359,25 @@ if __name__ == '__main__':
         pool.close()
         pool.join()
         pool.terminate()
-        # async_end_time = time.time() # TODO: remove
 
-        # print("%s - Setup time: %f" % (wsi_name, async_start_time-setup_start_time) )# TODO: remove
-        # print("%s - Tiling time: %f" % (wsi_name, async_end_time-async_start_time) )# TODO: remove
-        # print("%s - Total time: %f" % (wsi_name, async_end_time-setup_start_time) )# TODO: remove
+        # INFO
+        if(args['verbose'] >= LOG_INFO):
+            print("%d - Finished Exporting tiles" % (i+1) )
+            # DEBUG: Report tile export time & memory
+            if(args['verbose'] >= LOG_DEBUG):
+                async_end_time = time.time()
+                print("%d - WSI Setup Time: %f" % (i+1, async_start_time-setup_start_time) )
+                print("%d - Tile Export Time: %f" % (i+1, async_end_time-async_start_time) )
+                print("%d - Total WSI Processing Time: %f" % (i+1, async_end_time-setup_start_time) )
+                # TODO: report memory usage
 
+    # INFO
+    if(args['verbose'] >= LOG_INFO):
+        print("Finished Processinf All WSIs" )
+        # DEBUG: Report tile export time & memory
+        if(args['verbose'] >= LOG_DEBUG):
+            total_end_time = time.time()
+            print("Total Time: %f" % (total_end_time-total_start_time) )
 
 
 
