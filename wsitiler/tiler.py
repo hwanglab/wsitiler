@@ -33,8 +33,8 @@ FINAL_TILE_SIZE = 224
 # MIN_FOREGROUND_THRESHOLD defines minimum tissue/background ratio to classify a tile as foreground.
 MIN_FOREGROUND_THRESHOLD = 0
 # HE_REF_IMG defines the path to the default reference image for WSI color normalization.
-# HE_REF_IMG = str(Path(__file__).absolute() / "normalizer/macenko_reference_img.png") # TODO: restore
-HE_REF_IMG = str(Path().absolute() / "wsitiler/normalizer/macenko_reference_img.png") #TODO: delete
+HE_REF_IMG = str(Path(__file__).absolute() / "normalizer/macenko_reference_img.png")
+# HE_REF_IMG = str(Path().absolute() / "wsitiler/normalizer/macenko_reference_img.png") #TODO: remove. Use for debuging in interactive mode
 # NORMALIZER_CHOICES defines the valid choices for WSI normalization methods.
 NORMALIZER_CHOICES= ["None","macenko"]
 # SUPPORTED_WSI_FORMATS defines the WSI formats supported by Openslide.
