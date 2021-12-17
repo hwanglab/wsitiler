@@ -22,7 +22,8 @@ from skimage.filters import threshold_otsu
 from skimage.morphology import remove_small_objects, opening,closing, square
 from scipy.ndimage import binary_fill_holes
 
-import wsitiler.normalizer as norm #TODO: fix
+# import wsitiler.normalizer as norm #TODO: fix
+import MacenkoNormalizer 
 
 # MICRONS_PER_TILE defines the tile edge length used when breaking WSIs into smaller images (m x m)
 MICRONS_PER_TILE = 256
@@ -33,7 +34,7 @@ FINAL_TILE_SIZE = 224
 # MIN_FOREGROUND_THRESHOLD defines minimum tissue/background ratio to classify a tile as foreground.
 MIN_FOREGROUND_THRESHOLD = 0
 # HE_REF_IMG defines the path to the default reference image for WSI color normalization.
-HE_REF_IMG = str(Path(__file__).absolute() / "normalizer/macenko_reference_img.png")
+HE_REF_IMG = str(Path(__file__).absolute().parent / "normalizer/macenko_reference_img.png")
 # HE_REF_IMG = str(Path().absolute() / "wsitiler/normalizer/macenko_reference_img.png") #TODO: remove. Use for debuging in interactive mode
 # NORMALIZER_CHOICES defines the valid choices for WSI normalization methods.
 NORMALIZER_CHOICES= ["None","macenko"]
@@ -65,7 +66,9 @@ def setup_normalizer(normalizer_choice, ref_img_path):
     if normalizer_choice is not None and normalizer_choice != "None":
         if normalizer_choice in NORMALIZER_CHOICES:
             if normalizer_choice == "macenko":
-                normalizer = norm.MacenkoNormalizer.MacenkoNormalizer()
+                # normalizer = norm.MacenkoNormalizer.MacenkoNormalizer() #TODO: fix
+                # normalizer = wsitiler.MacenkoNormalizer.MacenkoNormalizer()
+                normalizer = MacenkoNormalizer.MacenkoNormalizer()
                 ref_img = np.array(ref_img)  
             
             # Add more options here as "else if" blocks      
@@ -211,6 +214,9 @@ def export_tiles(wsi, tile_data, tile_dims, output="./", normalizer=None, final_
     Output:
         Funtion exports tiles as PNG files to output directory.
     """
+
+    print("---wsi: %s\n\ttile_data: (%d-%d)\n\ttile_dims: %s\n\toutput: %s\n\tfinal_tile_size: %s" % (wsi,tile_data.iloc[0]['tile_id'],tile_data.iloc[-1]['tile_id'],tile_dims,output,final_tile_size))
+
     # Open and prepare input
     wsi_image = openslide.open_slide(wsi)
     output = Path(output)
