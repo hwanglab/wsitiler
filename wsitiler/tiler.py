@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import multiprocessing as mp
 import matplotlib.pyplot as plt
+import traceback
 
 from pathlib import Path
 from math import ceil, floor
@@ -22,8 +23,12 @@ from skimage.filters import threshold_otsu
 from skimage.morphology import remove_small_objects, opening,closing, square
 from scipy.ndimage import binary_fill_holes
 
+from openslide import OpenSlideError, OpenSlideUnsupportedFormatError
+from PIL import UnidentifiedImageError
+
 # import wsitiler.normalizer as norm #TODO: fix
-import MacenkoNormalizer 
+# import wsitiler.MacenkoNormalizer as norm
+from MacenkoNormalizer import MacenkoNormalizer as norm
 
 # MICRONS_PER_TILE defines the tile edge length used when breaking WSIs into smaller images (m x m)
 MICRONS_PER_TILE = 256
@@ -67,8 +72,8 @@ def setup_normalizer(normalizer_choice, ref_img_path):
         if normalizer_choice in NORMALIZER_CHOICES:
             if normalizer_choice == "macenko":
                 # normalizer = norm.MacenkoNormalizer.MacenkoNormalizer() #TODO: fix
-                # normalizer = wsitiler.MacenkoNormalizer.MacenkoNormalizer()
-                normalizer = MacenkoNormalizer.MacenkoNormalizer()
+                # normalizer = MacenkoNormalizer.MacenkoNormalizer()
+                normalizer = norm.MacenkoNormalizer()
                 ref_img = np.array(ref_img)  
             
             # Add more options here as "else if" blocks      
@@ -303,7 +308,7 @@ if __name__ == '__main__':
                 print("%d: %s" % (i+1,aPath) )
 
     # Process wsi images
-    # i=0; wsi=all_wsi_paths[i] # TODO: remove
+    # i=2; wsi=all_wsi_paths[i] # TODO: remove
     for i,wsi in enumerate(all_wsi_paths):
         # INFO
         if(args['verbose'] >= LOG_INFO):
@@ -317,8 +322,17 @@ if __name__ == '__main__':
         out_tile_path = outpath / wsi_name
 
         #Open WSI
-        wsi_image = openslide.open_slide(str(wsi))
-        # TODO: catch errors opening, report and skip
+        try:
+            wsi_image = openslide.open_slide(str(wsi))
+        except (OpenSlideError,OpenSlideUnsupportedFormatError,UnidentifiedImageError) as e:
+            # INFO
+            if(args['verbose'] >= LOG_WARNING):
+                print("%d - WARNING: WSI could not be read. Skipping: %s\n" % (i+1,str(wsi)))
+            # DEBUG: Details for WSI reading error
+            if(args['verbose'] >= LOG_DEBUG):
+                print(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+            
+            continue
         
         # INFO
         if(args['verbose'] >= LOG_INFO):
@@ -379,7 +393,7 @@ if __name__ == '__main__':
 
     # INFO
     if(args['verbose'] >= LOG_INFO):
-        print("Finished Processinf All WSIs" )
+        print("Finished Processing All WSIs" )
         # DEBUG: Report tile export time & memory
         if(args['verbose'] >= LOG_DEBUG):
             total_end_time = time.time()
