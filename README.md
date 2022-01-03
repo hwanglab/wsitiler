@@ -1,6 +1,8 @@
 # WSItiler
 Tools for dividing pathology whole slide images into tiles and save them as individual files.
 
+### *Warning:* This project is still under development.
+
 ## About
 
 WSItiler tries to optimize the pre-processing of Pathology Whole Slide Images (WSI), which tend to be very large files of tiled images of different magnifications. We do this by identifying regions of interest in a downscaled copy of the WSI and only processing the tiles that correspond to said areas (the foreground) in a parallelized manner using multiprocessing.
