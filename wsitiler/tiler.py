@@ -37,9 +37,6 @@ NOISE_SIZE_MICRONS = 256
 FINAL_TILE_SIZE = 224
 # MIN_FOREGROUND_THRESHOLD defines minimum tissue/background ratio to classify a tile as foreground.
 MIN_FOREGROUND_THRESHOLD = 0
-# HE_REF_IMG defines the path to the default reference image for WSI color normalization.
-HE_REF_IMG = str(Path(__file__).absolute().parent / "normalizer/macenko_reference_img.png") #TODO: use in production
-# HE_REF_IMG = str(Path().absolute() / "wsitiler/normalizer/macenko_reference_img.png") #TODO: remove. Use for debuging in interactive mode
 # NORMALIZER_CHOICES defines the valid choices for WSI normalization methods.
 NORMALIZER_CHOICES= ["None","macenko","macenko_isaiah"] #TODO: remove macenko_isaiah
 # SUPPORTED_WSI_FORMATS defines the WSI formats supported by Openslide.
@@ -51,7 +48,7 @@ LOG_WARNING = 1
 LOG_INFO = 2
 LOG_DEBUG = 3
 
-def setup_normalizer(normalizer_choice, ref_img_path):
+def setup_normalizer(normalizer_choice, ref_img_path=None):
     """
     Initialize a WSI normalizer object using the method of choice.
 
@@ -64,7 +61,15 @@ def setup_normalizer(normalizer_choice, ref_img_path):
     """
 
     normalizer = None
-    ref_img = np.array(Image.open(ref_img_path).convert('RGB'))
+
+    # Import target image
+    if ref_img_path is None or ref_img_path == "None":
+        ref_img = norm.get_target_img()
+    else:
+        if os.path.exists(ref_img_path):
+            ref_img = np.array(Image.open(ref_img_path).convert('RGB'))
+        else:
+            raise ValueError("Target image does not exist")
 
     # Initialize normalizer & setup reference image if required
     if normalizer_choice is not None and normalizer_choice != "None":
@@ -76,8 +81,8 @@ def setup_normalizer(normalizer_choice, ref_img_path):
             # elif normalizer_choice == "vahadane":
             #     normalizer = norm.VahadaneNormalizer.VahadaneNormalizer()
             
-            # else:
-                # TODO: Give warning if option not available!!    
+            else:
+                raise ValueError("Normalizer choice not supported")
 
         normalizer.fit(ref_img)
 
@@ -287,7 +292,7 @@ if __name__ == '__main__':
     ap.add_argument('-n', '--normalizer', default="macenko", choices=NORMALIZER_CHOICES, help="Select the method for WSI color normalization. Default: 'macenko'. Options: [%s]" % ( ", ".join(NORMALIZER_CHOICES) ))
     ap.add_argument('-z', '--final_tile_size', default=FINAL_TILE_SIZE, type=int, help="Defines the final tile size in pixels (N x N), give zero (0) for no resizing. If processed tile isn't this size, it will be interpolated to fit. Default: [%d]" % FINAL_TILE_SIZE)
     ap.add_argument('-f', '--foreground_threshold', default=MIN_FOREGROUND_THRESHOLD, type=int, help="Defines the minimum tissue/background ratio for a tile to be considered foreground. Default: [%d]" % MIN_FOREGROUND_THRESHOLD)
-    ap.add_argument('-r', '--normalizer_reference', default=HE_REF_IMG, type=str, help='H & E image used as a reference for normalization. Default: [%s]' % HE_REF_IMG )
+    ap.add_argument('-r', '--normalizer_reference', default="None", type=str, help='H & E image used as a reference for normalization. Default: [wsitiler/normalizer/macenko_reference_img.png]')
     ap.add_argument('-v', '--verbose', action='count', help='Print updates and reports as program executes. Provide the following number of "v" for the following settings: [%d: Error. %d: Warning, %d: Info, %d: Debug]' % (LOG_ERROR,LOG_WARNING,LOG_INFO,LOG_DEBUG) ) #TODO: setup logging appropriately
     ap.add_argument('-t', '--tissue_chunk_id', action='store_true', help='Set this flag to determine tissue chunk ids for each tile: Default: [False]')
     args = vars(ap.parse_args())
