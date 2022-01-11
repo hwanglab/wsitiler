@@ -38,7 +38,7 @@ FINAL_TILE_SIZE = 224
 # MIN_FOREGROUND_THRESHOLD defines minimum tissue/background ratio to classify a tile as foreground.
 MIN_FOREGROUND_THRESHOLD = 0
 # NORMALIZER_CHOICES defines the valid choices for WSI normalization methods.
-NORMALIZER_CHOICES= ["None","macenko","macenko_isaiah"] #TODO: remove macenko_isaiah
+NORMALIZER_CHOICES= ["None","macenko"]
 # SUPPORTED_WSI_FORMATS defines the WSI formats supported by Openslide.
 SUPPORTED_WSI_FORMATS = [".svs",".ndpi",".vms",".vmu",".scn",".mrxs",".tiff",".svslide",".tif",".bif"]
 
@@ -249,15 +249,11 @@ def export_tiles(wsi, tile_data, tile_dims, output="./", normalizer=None, final_
     Output:
         Funtion exports tiles as PNG files to output directory.
     """
-
-    # print("---wsi: %s\n\ttile_data: (%d-%d)\n\ttile_dims: %s\n\toutput: %s\n\tfinal_tile_size: %s" % (wsi,tile_data.iloc[0]['tile_id'],tile_data.iloc[-1]['tile_id'],tile_dims,output,final_tile_size))#TODO:remove
-
     # Open and prepare input
     wsi_image = openslide.open_slide(wsi)
     output = Path(output)
 
     # Process and export each tile sequentially
-    # index=6; aTile = tile_data.iloc[index] #TODO: remove
     for index, aTile in tile_data.iterrows():
         # Extract tile region
         aTile_img = wsi_image.read_region((aTile["wsi_x"], aTile["wsi_y"]), level=0,
@@ -436,28 +432,3 @@ if __name__ == '__main__':
         if(args['verbose'] >= LOG_DEBUG):
             total_end_time = time.time()
             print("Total Time: %f" % (total_end_time-total_start_time) )
-
-
-
-########################Debbuging lines #TODO: remove
-# ap.add_argument('-e', '--export_figures', action='store_true', help='Flag for saving all heatmaps as PNG images.')
-
-# import time
-# plt.imshow(remove_small_sand);plt.show();plt.close()
-# plt.imshow(markers);plt.show();plt.close()
-# plt.imshow(markers_nozero);plt.show();plt.close()
-# plt.imshow(markers);plt.show();plt.close()
-# plt.imshow(aTile_img);plt.show();plt.close()
-# aTile_img_og = aTile_img
-# export_tiles(tile_data=tile_data_lists[0].iloc[0:10],wsi=str(wsi),normalizer=normalizer,tile_dims={'x':ppt_x,'y':ppt_y},output=str(out_tile_path),final_tile_size=args['final_tile_size'])
-
-# plt.figure()
-# plt.subplot(1,2,1)
-# plt.imshow(aTile_img_og)
-# plt.title("Not Normalized")
-# plt.axis('off')
-# plt.subplot(1,2,2)
-# plt.imshow(aTile_img)
-# plt.title("Normalized")
-# plt.axis('off')
-# plt.show();plt.close()
