@@ -15,6 +15,7 @@ import multiprocessing as mp
 import matplotlib.pyplot as plt
 import traceback
 
+from PIL import Image
 from pathlib import Path
 from math import ceil, floor
 from skimage import transform
@@ -68,7 +69,7 @@ def setup_normalizer(normalizer_choice, ref_img_path):
     """
 
     normalizer = None
-    ref_img = Image.imread(str(ref_img_path))
+    ref_img = np.array(Image.open(ref_img_path).convert('RGB'))
 
     # Initialize normalizer & setup reference image if required
     if normalizer_choice is not None and normalizer_choice != "None":
@@ -440,4 +441,16 @@ if __name__ == '__main__':
 # plt.imshow(markers_nozero);plt.show();plt.close()
 # plt.imshow(markers);plt.show();plt.close()
 # plt.imshow(aTile_img);plt.show();plt.close()
+# aTile_img_og = aTile_img
 # export_tiles(tile_data=tile_data_lists[0].iloc[0:10],wsi=str(wsi),normalizer=normalizer,tile_dims={'x':ppt_x,'y':ppt_y},output=str(out_tile_path),final_tile_size=args['final_tile_size'])
+
+# plt.figure()
+# plt.subplot(1,2,1)
+# plt.imshow(aTile_img_og)
+# plt.title("Not Normalized")
+# plt.axis('off')
+# plt.subplot(1,2,2)
+# plt.imshow(aTile_img)
+# plt.title("Normalized")
+# plt.axis('off')
+# plt.show();plt.close()
