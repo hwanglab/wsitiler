@@ -23,16 +23,11 @@ from scipy import ndimage as ndi
 from skimage.color import rgb2gray
 from skimage.filters import threshold_otsu
 from skimage.morphology import remove_small_objects, opening,closing, square
-# from scipy.ndimage import binary_fill_holes
 
 from openslide import OpenSlideError, OpenSlideUnsupportedFormatError
 from PIL import UnidentifiedImageError
 
-# import wsitiler.normalizer as norm #TODO: fix
-from tiatoolbox.tools import stainnorm as norm
-# import wsitiler.MacenkoNormalizer as norm
-# from MacenkoNormalizer import MacenkoNormalizer as norm
-# from wsitiler.MacenkoNormalizer import MacenkoNormalizer as norm
+import wsitiler.normalizer as norm
 
 # MICRONS_PER_TILE defines the tile edge length used when breaking WSIs into smaller images (m x m)
 MICRONS_PER_TILE = 256
@@ -43,10 +38,10 @@ FINAL_TILE_SIZE = 224
 # MIN_FOREGROUND_THRESHOLD defines minimum tissue/background ratio to classify a tile as foreground.
 MIN_FOREGROUND_THRESHOLD = 0
 # HE_REF_IMG defines the path to the default reference image for WSI color normalization.
-HE_REF_IMG = str(Path(__file__).absolute().parent / "normalizer/macenko_reference_img.png")
+HE_REF_IMG = str(Path(__file__).absolute().parent / "normalizer/macenko_reference_img.png") #TODO: use in production
 # HE_REF_IMG = str(Path().absolute() / "wsitiler/normalizer/macenko_reference_img.png") #TODO: remove. Use for debuging in interactive mode
 # NORMALIZER_CHOICES defines the valid choices for WSI normalization methods.
-NORMALIZER_CHOICES= ["None","macenko"]
+NORMALIZER_CHOICES= ["None","macenko","macenko_isaiah"] #TODO: remove macenko_isaiah
 # SUPPORTED_WSI_FORMATS defines the WSI formats supported by Openslide.
 SUPPORTED_WSI_FORMATS = [".svs",".ndpi",".vms",".vmu",".scn",".mrxs",".tiff",".svslide",".tif",".bif"]
 
@@ -75,12 +70,14 @@ def setup_normalizer(normalizer_choice, ref_img_path):
     if normalizer_choice is not None and normalizer_choice != "None":
         if normalizer_choice in NORMALIZER_CHOICES:
             if normalizer_choice == "macenko":
-                # normalizer = norm.MacenkoNormalizer.MacenkoNormalizer() #TODO: fix
-                # normalizer = MacenkoNormalizer.MacenkoNormalizer()
-                normalizer = norm.MacenkoNormalizer()
-                ref_img = np.array(ref_img)  
+                normalizer = norm.MacenkoNormalizer.MacenkoNormalizer()
+
+            # Add more options here as "else if" blocks, like: 
+            # elif normalizer_choice == "vahadane":
+            #     normalizer = norm.VahadaneNormalizer.VahadaneNormalizer()
             
-            # Add more options here as "else if" blocks      
+            # else:
+                # TODO: Give warning if option not available!!    
 
         normalizer.fit(ref_img)
 
@@ -336,7 +333,7 @@ if __name__ == '__main__':
         if(args['verbose'] >= LOG_DEBUG):
             print("The following WSIs were found:")
             for i,aPath in enumerate([str(s) for s in all_wsi_paths]):
-                print("%d: %s" % (i+1,aPath) )
+                print("%d:\t%s" % (i+1,aPath) )
 
     # Process wsi images
     # i=0; wsi=all_wsi_paths[i] # TODO: remove
@@ -404,9 +401,14 @@ if __name__ == '__main__':
         # Process tiles in parallel        
         pool = mp.Pool(args['cores'])
         for a_tile_list in tile_data_lists:
-            pool.apply_async(func=export_tiles,kwds={'tile_data':a_tile_list,'wsi':str(wsi),'normalizer':normalizer,
-                                                        'tile_dims':{'x':ppt_x,'y':ppt_y},'output':str(out_tile_path),
-                                                        'final_tile_size':args['final_tile_size']})
+            pool.apply_async(func=export_tiles,kwds={
+                'tile_data':a_tile_list,
+                'wsi':str(wsi),
+                'normalizer':normalizer,
+                'tile_dims':{'x':ppt_x,'y':ppt_y},
+                'output':str(out_tile_path),
+                'final_tile_size':args['final_tile_size']
+                })
         pool.close()
         pool.join()
         pool.terminate()
