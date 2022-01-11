@@ -15,6 +15,7 @@ import multiprocessing as mp
 import matplotlib.pyplot as plt
 import traceback
 
+from PIL import Image
 from pathlib import Path
 from math import ceil, floor
 from skimage import transform
@@ -22,15 +23,11 @@ from scipy import ndimage as ndi
 from skimage.color import rgb2gray
 from skimage.filters import threshold_otsu
 from skimage.morphology import remove_small_objects, opening,closing, square
-# from scipy.ndimage import binary_fill_holes
 
 from openslide import OpenSlideError, OpenSlideUnsupportedFormatError
 from PIL import UnidentifiedImageError
 
-# import wsitiler.normalizer as norm #TODO: fix
-import wsitiler.MacenkoNormalizer as norm
-# from MacenkoNormalizer import MacenkoNormalizer as norm
-# from wsitiler.MacenkoNormalizer import MacenkoNormalizer as norm
+import wsitiler.normalizer as norm
 
 # MICRONS_PER_TILE defines the tile edge length used when breaking WSIs into smaller images (m x m)
 MICRONS_PER_TILE = 256
@@ -40,9 +37,6 @@ NOISE_SIZE_MICRONS = 256
 FINAL_TILE_SIZE = 224
 # MIN_FOREGROUND_THRESHOLD defines minimum tissue/background ratio to classify a tile as foreground.
 MIN_FOREGROUND_THRESHOLD = 0
-# HE_REF_IMG defines the path to the default reference image for WSI color normalization.
-HE_REF_IMG = str(Path(__file__).absolute().parent / "normalizer/macenko_reference_img.png")
-# HE_REF_IMG = str(Path().absolute() / "wsitiler/normalizer/macenko_reference_img.png") #TODO: remove. Use for debuging in interactive mode
 # NORMALIZER_CHOICES defines the valid choices for WSI normalization methods.
 NORMALIZER_CHOICES= ["None","macenko"]
 # SUPPORTED_WSI_FORMATS defines the WSI formats supported by Openslide.
@@ -54,7 +48,7 @@ LOG_WARNING = 1
 LOG_INFO = 2
 LOG_DEBUG = 3
 
-def setup_normalizer(normalizer_choice, ref_img_path):
+def setup_normalizer(normalizer_choice, ref_img_path=None):
     """
     Initialize a WSI normalizer object using the method of choice.
 
@@ -67,18 +61,28 @@ def setup_normalizer(normalizer_choice, ref_img_path):
     """
 
     normalizer = None
-    ref_img = plt.imread(str(ref_img_path))
+
+    # Import target image
+    if ref_img_path is None or ref_img_path == "None":
+        ref_img = norm.get_target_img()
+    else:
+        if os.path.exists(ref_img_path):
+            ref_img = np.array(Image.open(ref_img_path).convert('RGB'))
+        else:
+            raise ValueError("Target image does not exist")
 
     # Initialize normalizer & setup reference image if required
     if normalizer_choice is not None and normalizer_choice != "None":
         if normalizer_choice in NORMALIZER_CHOICES:
             if normalizer_choice == "macenko":
-                # normalizer = norm.MacenkoNormalizer.MacenkoNormalizer() #TODO: fix
-                # normalizer = MacenkoNormalizer.MacenkoNormalizer()
-                normalizer = norm.MacenkoNormalizer()
-                ref_img = np.array(ref_img)  
+                normalizer = norm.MacenkoNormalizer.MacenkoNormalizer()
+
+            # Add more options here as "else if" blocks, like: 
+            # elif normalizer_choice == "vahadane":
+            #     normalizer = norm.VahadaneNormalizer.VahadaneNormalizer()
             
-            # Add more options here as "else if" blocks      
+            else:
+                raise ValueError("Normalizer choice not supported")
 
         normalizer.fit(ref_img)
 
@@ -245,15 +249,11 @@ def export_tiles(wsi, tile_data, tile_dims, output="./", normalizer=None, final_
     Output:
         Funtion exports tiles as PNG files to output directory.
     """
-
-    # print("---wsi: %s\n\ttile_data: (%d-%d)\n\ttile_dims: %s\n\toutput: %s\n\tfinal_tile_size: %s" % (wsi,tile_data.iloc[0]['tile_id'],tile_data.iloc[-1]['tile_id'],tile_dims,output,final_tile_size))#TODO:remove
-
     # Open and prepare input
     wsi_image = openslide.open_slide(wsi)
     output = Path(output)
 
     # Process and export each tile sequentially
-    # aTile = tile_data.iloc[3] #TODO: remove
     for index, aTile in tile_data.iterrows():
         # Extract tile region
         aTile_img = wsi_image.read_region((aTile["wsi_x"], aTile["wsi_y"]), level=0,
@@ -288,12 +288,13 @@ if __name__ == '__main__':
     ap.add_argument('-n', '--normalizer', default="macenko", choices=NORMALIZER_CHOICES, help="Select the method for WSI color normalization. Default: 'macenko'. Options: [%s]" % ( ", ".join(NORMALIZER_CHOICES) ))
     ap.add_argument('-z', '--final_tile_size', default=FINAL_TILE_SIZE, type=int, help="Defines the final tile size in pixels (N x N), give zero (0) for no resizing. If processed tile isn't this size, it will be interpolated to fit. Default: [%d]" % FINAL_TILE_SIZE)
     ap.add_argument('-f', '--foreground_threshold', default=MIN_FOREGROUND_THRESHOLD, type=int, help="Defines the minimum tissue/background ratio for a tile to be considered foreground. Default: [%d]" % MIN_FOREGROUND_THRESHOLD)
-    ap.add_argument('-r', '--normalizer_reference', default=HE_REF_IMG, type=str, help='H & E image used as a reference for normalization. Default: [%s]' % HE_REF_IMG )
+    ap.add_argument('-r', '--normalizer_reference', default="None", type=str, help='H & E image used as a reference for normalization. Default: [wsitiler/normalizer/macenko_reference_img.png]')
     ap.add_argument('-v', '--verbose', action='count', help='Print updates and reports as program executes. Provide the following number of "v" for the following settings: [%d: Error. %d: Warning, %d: Info, %d: Debug]' % (LOG_ERROR,LOG_WARNING,LOG_INFO,LOG_DEBUG) ) #TODO: setup logging appropriately
     ap.add_argument('-t', '--tissue_chunk_id', action='store_true', help='Set this flag to determine tissue chunk ids for each tile: Default: [False]')
     args = vars(ap.parse_args())
     # args = vars(ap.parse_args(["-i","C:/Users/clemenj/Documents/Data_local/testWSI/","-o","C:/Users/clemenj/Documents/Data_local/testWSI/test_tiles/"]))# TODO: remove
     # args = vars(ap.parse_args(["-i","/home/clemenj/Data/testWSI/","-o","/home/clemenj/Data/testWSI/test_tiles/","-c","16","-n", "macenko","-vvvv","-t"]))# TODO: remove
+    # args = vars(ap.parse_args(["-i","/home/clemenj/Data/Projects/Deep_learning_WSI_tutorial/WSIs/","-o","/home/clemenj/Data/testWSI/test_tiles/","-c","16","-n", "macenko","-vvvv","-t"]))# TODO: remove
 
     # Validate arguments
     if args['verbose'] is None:
@@ -333,7 +334,7 @@ if __name__ == '__main__':
         if(args['verbose'] >= LOG_DEBUG):
             print("The following WSIs were found:")
             for i,aPath in enumerate([str(s) for s in all_wsi_paths]):
-                print("%d: %s" % (i+1,aPath) )
+                print("%d:\t%s" % (i+1,aPath) )
 
     # Process wsi images
     # i=0; wsi=all_wsi_paths[i] # TODO: remove
@@ -401,9 +402,14 @@ if __name__ == '__main__':
         # Process tiles in parallel        
         pool = mp.Pool(args['cores'])
         for a_tile_list in tile_data_lists:
-            pool.apply_async(func=export_tiles,kwds={'tile_data':a_tile_list,'wsi':str(wsi),'normalizer':normalizer,
-                                                        'tile_dims':{'x':ppt_x,'y':ppt_y},'output':str(out_tile_path),
-                                                        'final_tile_size':args['final_tile_size']})
+            pool.apply_async(func=export_tiles,kwds={
+                'tile_data':a_tile_list,
+                'wsi':str(wsi),
+                'normalizer':normalizer,
+                'tile_dims':{'x':ppt_x,'y':ppt_y},
+                'output':str(out_tile_path),
+                'final_tile_size':args['final_tile_size']
+                })
         pool.close()
         pool.join()
         pool.terminate()
@@ -426,16 +432,3 @@ if __name__ == '__main__':
         if(args['verbose'] >= LOG_DEBUG):
             total_end_time = time.time()
             print("Total Time: %f" % (total_end_time-total_start_time) )
-
-
-
-########################Debbuging lines #TODO: remove
-# ap.add_argument('-e', '--export_figures', action='store_true', help='Flag for saving all heatmaps as PNG images.')
-
-# import time
-# plt.imshow(remove_small_sand);plt.show();plt.close()
-# plt.imshow(markers);plt.show();plt.close()
-# plt.imshow(markers_nozero);plt.show();plt.close()
-# plt.imshow(markers);plt.show();plt.close()
-# plt.imshow(aTile_img);plt.show();plt.close()
-# export_tiles(tile_data=tile_data_lists[0].iloc[0:10],wsi=str(wsi),normalizer=normalizer,tile_dims={'x':ppt_x,'y':ppt_y},output=str(out_tile_path),final_tile_size=args['final_tile_size'])
