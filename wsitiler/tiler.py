@@ -28,7 +28,8 @@ from openslide import OpenSlideError, OpenSlideUnsupportedFormatError
 from PIL import UnidentifiedImageError
 
 # import wsitiler.normalizer as norm #TODO: fix
-import wsitiler.MacenkoNormalizer as norm
+from tiatoolbox.tools import stainnorm as norm
+# import wsitiler.MacenkoNormalizer as norm
 # from MacenkoNormalizer import MacenkoNormalizer as norm
 # from wsitiler.MacenkoNormalizer import MacenkoNormalizer as norm
 
@@ -67,7 +68,7 @@ def setup_normalizer(normalizer_choice, ref_img_path):
     """
 
     normalizer = None
-    ref_img = plt.imread(str(ref_img_path))
+    ref_img = Image.imread(str(ref_img_path))
 
     # Initialize normalizer & setup reference image if required
     if normalizer_choice is not None and normalizer_choice != "None":
@@ -253,7 +254,7 @@ def export_tiles(wsi, tile_data, tile_dims, output="./", normalizer=None, final_
     output = Path(output)
 
     # Process and export each tile sequentially
-    # aTile = tile_data.iloc[3] #TODO: remove
+    # index=6; aTile = tile_data.iloc[index] #TODO: remove
     for index, aTile in tile_data.iterrows():
         # Extract tile region
         aTile_img = wsi_image.read_region((aTile["wsi_x"], aTile["wsi_y"]), level=0,
@@ -294,6 +295,7 @@ if __name__ == '__main__':
     args = vars(ap.parse_args())
     # args = vars(ap.parse_args(["-i","C:/Users/clemenj/Documents/Data_local/testWSI/","-o","C:/Users/clemenj/Documents/Data_local/testWSI/test_tiles/"]))# TODO: remove
     # args = vars(ap.parse_args(["-i","/home/clemenj/Data/testWSI/","-o","/home/clemenj/Data/testWSI/test_tiles/","-c","16","-n", "macenko","-vvvv","-t"]))# TODO: remove
+    # args = vars(ap.parse_args(["-i","/home/clemenj/Data/Projects/Deep_learning_WSI_tutorial/WSIs/","-o","/home/clemenj/Data/testWSI/test_tiles/","-c","16","-n", "macenko","-vvvv","-t"]))# TODO: remove
 
     # Validate arguments
     if args['verbose'] is None:
