@@ -17,5 +17,5 @@ setuptools.setup(
     # },
     license='gpl-3.0',
     packages=['wsitiler'],
-    install_requires=['numpy','pandas','matplotlib','scipy','scikit-image','pixman==0.40.0','openslide-python'],
+    install_requires=['numpy','pandas','matplotlib','scipy','scikit-image','openslide-python'],
 )
