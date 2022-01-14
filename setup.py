@@ -16,6 +16,6 @@ setuptools.setup(
     #     "More Info": "https://github.com/hwanglab/xxxx"
     # },
     license='gpl-3.0',
-    packages=setuptools.find_packages(include=["wsitiler','wsitiler.*"]),
+    packages=setuptools.find_packages(include=['wsitiler','wsitiler.*']),
     install_requires=['numpy','pandas','matplotlib','scipy','scikit-image','openslide-python'],
 )
