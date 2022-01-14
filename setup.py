@@ -18,4 +18,5 @@ setuptools.setup(
     license='gpl-3.0',
     packages=setuptools.find_packages(include=['wsitiler','wsitiler.*']),
     install_requires=['numpy','pandas','matplotlib','scipy','scikit-image','openslide-python'],
+    package_data={'normalizer':'*reference_img.png'}
 )
