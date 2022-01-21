@@ -292,9 +292,6 @@ if __name__ == '__main__':
     ap.add_argument('-v', '--verbose', action='count', help='Print updates and reports as program executes. Provide the following number of "v" for the following settings: [%d: Error. %d: Warning, %d: Info, %d: Debug]' % (LOG_ERROR,LOG_WARNING,LOG_INFO,LOG_DEBUG) ) #TODO: setup logging appropriately
     ap.add_argument('-t', '--tissue_chunk_id', action='store_true', help='Set this flag to determine tissue chunk ids for each tile: Default: [False]')
     args = vars(ap.parse_args())
-    # args = vars(ap.parse_args(["-i","C:/Users/clemenj/Documents/Data_local/testWSI/","-o","C:/Users/clemenj/Documents/Data_local/testWSI/test_tiles/"]))# TODO: remove
-    # args = vars(ap.parse_args(["-i","/home/clemenj/Data/testWSI/","-o","/home/clemenj/Data/testWSI/test_tiles/","-c","16","-n", "macenko","-vvvv","-t"]))# TODO: remove
-    # args = vars(ap.parse_args(["-i","/home/clemenj/Data/Projects/Deep_learning_WSI_tutorial/WSIs/","-o","/home/clemenj/Data/testWSI/test_tiles/","-c","16","-n", "macenko","-vvvv","-t"]))# TODO: remove
 
     # Validate arguments
     if args['verbose'] is None:

@@ -9,11 +9,12 @@ Date Created: 01/11/2021
 from PIL import Image
 import numpy as np
 import pkg_resources
+from wsitiler.normalizer import MacenkoNormalizer
 
 def get_target_img():
     """
     Open target image for tile normalization as numpy array.
-    
+
     Input:
         None
 
