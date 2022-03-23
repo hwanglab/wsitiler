@@ -313,8 +313,6 @@ if __name__ == '__main__':
     ap.add_argument('-t', '--tissue_chunk_id', action='store_true', help='Set this flag to determine tissue chunk ids for each tile: Default: [False]')    
     args = vars(ap.parse_args())
 
-    # args = {'input': '/home/clemenj/Data/testWSI/SG_38.svs', 'output': '/home/clemenj/Data/testWSI/test_tiles/', 'cores': 80, 'microns_per_tile': 256, 'normalizer': 'macenko', 'final_tile_size': 224, 'foreground_threshold': 0.01, 'normalizer_reference': 'None', 'verbose': 4, 'tissue_chunk_id': True} ##TODO remove
-
     # Validate arguments
     if args['verbose'] is not None:
         SET_LOG = args['verbose']
