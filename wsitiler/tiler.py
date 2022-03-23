@@ -14,6 +14,7 @@ import pandas as pd
 import multiprocessing as mp
 import matplotlib.pyplot as plt
 import traceback
+import warnings
 
 from PIL import Image
 from pathlib import Path
@@ -225,6 +226,17 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, get_chunk_id=False):
     plt.savefig(output / filename_tissuemask, bbox_inches='tight', pad_inches=0)
     plt.close()
 
+    # Export Chunk Mask image
+    if get_chunk_id:
+        filename_tissuemask = os.path.basename(output) + "__chunk-mask_tilesize_x-%d-y-%d.png" % (
+        thumbnail_ppt_x, thumbnail_ppt_y)
+        plt.figure()
+        plt.imshow(chunk_mask, cmap='hot', interpolation='nearest')
+        plt.axis('off')
+        plt.margins(0, 0)
+        plt.savefig(output / filename_tissuemask, bbox_inches='tight', pad_inches=0)
+        plt.close()
+
     # Export Thumbnail image
     filename_thumbnail = os.path.basename(output) + "__thumbnail_tilesize_x-%d-y-%d.png" % (
         thumbnail_ppt_x, thumbnail_ppt_y)
@@ -275,13 +287,19 @@ def export_tiles(wsi, tile_data, tile_dims, output="./", normalizer=None, final_
         if normalizer is not None:
             aTile_img = normalizer.transform(aTile_img)
 
+            # with warnings.catch_warnings():
+            #     warnings.filterwarnings('error')
+            #     try:
+            #         aTile_img = normalizer.transform(aTile_img)
+            #     except Warning as e:
+            #         print('**Normalizer Warning Found! Tile: [x=%s,y=%s] File: %s Error:\n' % (aTile["wsi_x"], aTile["wsi_y"], wsi),
+            #             traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__) )
+
         # Resize tile to final size
         if final_tile_size != 0:
             aTile_img = transform.resize(aTile_img, (final_tile_size,final_tile_size,3), order=1)  # 0:nearest neighbor
 
         # Save tile image to file
-        # plt.imshow(aTile_img);plt.axis('off');plt.margins(0, 0);plt.savefig(output / aTile['filename'], bbox_inches='tight', pad_inches=0);plt.close()
-        # im = Image.fromarray(aTile_img); im.save(output / aTile['filename'])
         plt.imsave(output / aTile['filename'], aTile_img)
 
     wsi_image.close()
@@ -302,6 +320,8 @@ if __name__ == '__main__':
     ap.add_argument('-v', '--verbose', action='count', help='Print updates and reports as program executes. Provide the following number of "v" for the following settings: [%d: Error. %d: Warning, %d: Info, %d: Debug]' % (LOG_ERROR,LOG_WARNING,LOG_INFO,LOG_DEBUG) ) #TODO: setup logging appropriately
     ap.add_argument('-t', '--tissue_chunk_id', action='store_true', help='Set this flag to determine tissue chunk ids for each tile: Default: [False]')    
     args = vars(ap.parse_args())
+
+    # args = {'input': '/home/clemenj/Data/testWSI/SG_38.svs', 'output': '/home/clemenj/Data/testWSI/test_tiles/', 'cores': 80, 'microns_per_tile': 256, 'normalizer': 'macenko', 'final_tile_size': 224, 'foreground_threshold': 0, 'normalizer_reference': 'None', 'verbose': 4, 'tissue_chunk_id': True} ##TODO remove
 
     # Validate arguments
     if args['verbose'] is not None:
@@ -332,8 +352,9 @@ if __name__ == '__main__':
 
     PRINT_LOG(LOG_INFO, "Found WSI images. Starting Processing")
     PRINT_LOG(LOG_DEBUG, "The following WSIs were found:")
-    for i,aPath in enumerate([str(s) for s in all_wsi_paths]):
-        PRINT_LOG(LOG_DEBUG, "%d:\t%s" % (i+1,aPath) )
+    if(SET_LOG >= LOG_DEBUG):
+        for i,aPath in enumerate([str(s) for s in all_wsi_paths]):
+            PRINT_LOG(LOG_DEBUG, "%d:\t%s" % (i+1,aPath) )
 
     # Process wsi images
     # i=0; wsi=all_wsi_paths[i] # TODO: remove
@@ -369,7 +390,7 @@ if __name__ == '__main__':
         tile_data_lists = np.array_split(ref_df.loc[ref_df['tissue_ratio'] > args['foreground_threshold'] ], args['cores'])
 
         PRINT_LOG(LOG_INFO, "%d - Initializing normalizer" % (i+1) )
-        PRINT_LOG(LOG_DEBUG, "%d - Normalizer method: %s \nNormalizer reference: %s" % (i+1,args['normalizer'],args['normalizer_reference']) )
+        PRINT_LOG(LOG_DEBUG, "%d - Normalizer method: %s \n%d - Normalizer reference: %s" % (i+1,args['normalizer'],i+1,args['normalizer_reference']) )
 
         # Prepare normalizer
         normalizer = setup_normalizer(normalizer_choice=args['normalizer'], ref_img_path=args['normalizer_reference'])
