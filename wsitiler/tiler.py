@@ -14,7 +14,6 @@ import pandas as pd
 import multiprocessing as mp
 import matplotlib.pyplot as plt
 import traceback
-import warnings
 
 from PIL import Image
 from pathlib import Path
@@ -38,7 +37,7 @@ NOISE_SIZE_MICRONS = 256
 # FINAL_TILE_SIZE defines final pixel width and height of a processed tile.
 FINAL_TILE_SIZE = 224
 # MIN_FOREGROUND_THRESHOLD defines minimum tissue/background ratio to classify a tile as foreground.
-MIN_FOREGROUND_THRESHOLD = 0
+MIN_FOREGROUND_THRESHOLD = 0.01
 # NORMALIZER_CHOICES defines the valid choices for WSI normalization methods.
 NORMALIZER_CHOICES= ["None","macenko"]
 # SUPPORTED_WSI_FORMATS defines the WSI formats supported by Openslide.
@@ -207,7 +206,7 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, get_chunk_id=False):
             rowlist.append(new_row)
 
     # Create reference dataframe
-    colnames = ["tile_id", "index_x", "index_y", "wsi_x", "wsi_y", "mask_x", "mask_y", "filename", "tissue_ratio"]
+    colnames = ["image_id","tile_id", "index_x", "index_y", "wsi_x", "wsi_y", "mask_x", "mask_y", "filename", "tissue_ratio"]
     if get_chunk_id:
                 colnames.append('chunk_id')
     ref_df = pd.DataFrame(data=rowlist, columns=colnames)
@@ -218,7 +217,7 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, get_chunk_id=False):
     output = Path(output) 
 
     # Export Mask image
-    filename_tissuemask = os.path.basename(output) + "__tissue-mask_tilesize_x-%d-y-%d.png" % (
+    filename_tissuemask = os.path.basename(output) + "___tissue-mask_tilesize_x-%d-y-%d.png" % (
     thumbnail_ppt_x, thumbnail_ppt_y)
     plt.figure()
     plt.imshow(tissue_mask, cmap='Greys_r', interpolation='nearest')
@@ -229,7 +228,7 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, get_chunk_id=False):
 
     # Export Chunk Mask image
     if get_chunk_id:
-        filename_tissuemask = os.path.basename(output) + "__chunk-mask_tilesize_x-%d-y-%d.png" % (
+        filename_tissuemask = os.path.basename(output) + "___chunk-mask_tilesize_x-%d-y-%d.png" % (
         thumbnail_ppt_x, thumbnail_ppt_y)
         plt.figure()
         plt.imshow(chunk_mask, cmap='hot', interpolation='nearest')
@@ -239,7 +238,7 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, get_chunk_id=False):
         plt.close()
 
     # Export Thumbnail image
-    filename_thumbnail = os.path.basename(output) + "__thumbnail_tilesize_x-%d-y-%d.png" % (
+    filename_thumbnail = os.path.basename(output) + "___thumbnail_tilesize_x-%d-y-%d.png" % (
         thumbnail_ppt_x, thumbnail_ppt_y)
     plt.figure()
     plt.imshow(thumbnail_og)
@@ -249,7 +248,7 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, get_chunk_id=False):
     plt.close()
 
     # Export CSV file
-    filename_refdf = os.path.basename(output) + "__reference_wsi-tilesize_x-%d-y-%d_mask-tilesize_x-%d-y-%d.tsv" % \
+    filename_refdf = os.path.basename(output) + "___reference_wsi-tilesize_x-%d-y-%d_mask-tilesize_x-%d-y-%d.tsv" % \
                      (ppt_x, ppt_y,thumbnail_ppt_x, thumbnail_ppt_y)
     ref_df.to_csv(output / filename_refdf, sep="\t", line_terminator="\n", index=False)
 
@@ -288,14 +287,6 @@ def export_tiles(wsi, tile_data, tile_dims, output="./", normalizer=None, final_
         if normalizer is not None:
             aTile_img = normalizer.transform(aTile_img)
 
-            # with warnings.catch_warnings():
-            #     warnings.filterwarnings('error')
-            #     try:
-            #         aTile_img = normalizer.transform(aTile_img)
-            #     except Warning as e:
-            #         print('**Normalizer Warning Found! Tile: [x=%s,y=%s] File: %s Error:\n' % (aTile["wsi_x"], aTile["wsi_y"], wsi),
-            #             traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__) )
-
         # Resize tile to final size
         if final_tile_size != 0:
             aTile_img = transform.resize(aTile_img, (final_tile_size,final_tile_size,3), order=1)  # 0:nearest neighbor
@@ -322,11 +313,13 @@ if __name__ == '__main__':
     ap.add_argument('-t', '--tissue_chunk_id', action='store_true', help='Set this flag to determine tissue chunk ids for each tile: Default: [False]')    
     args = vars(ap.parse_args())
 
-    # args = {'input': '/home/clemenj/Data/testWSI/SG_38.svs', 'output': '/home/clemenj/Data/testWSI/test_tiles/', 'cores': 80, 'microns_per_tile': 256, 'normalizer': 'macenko', 'final_tile_size': 224, 'foreground_threshold': 0, 'normalizer_reference': 'None', 'verbose': 4, 'tissue_chunk_id': True} ##TODO remove
+    # args = {'input': '/home/clemenj/Data/testWSI/SG_38.svs', 'output': '/home/clemenj/Data/testWSI/test_tiles/', 'cores': 80, 'microns_per_tile': 256, 'normalizer': 'macenko', 'final_tile_size': 224, 'foreground_threshold': 0.01, 'normalizer_reference': 'None', 'verbose': 4, 'tissue_chunk_id': True} ##TODO remove
 
     # Validate arguments
     if args['verbose'] is not None:
         SET_LOG = args['verbose']
+    if args['foreground_threshold'] < MIN_FOREGROUND_THRESHOLD:
+        print("Warning: Tiles with very little foreground may fail color normalization.")
     #TODO: check normalizer reference
     #TODO: check input exists
 
