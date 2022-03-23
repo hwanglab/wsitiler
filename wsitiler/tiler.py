@@ -37,7 +37,7 @@ NOISE_SIZE_MICRONS = 256
 # FINAL_TILE_SIZE defines final pixel width and height of a processed tile.
 FINAL_TILE_SIZE = 224
 # MIN_FOREGROUND_THRESHOLD defines minimum tissue/background ratio to classify a tile as foreground.
-MIN_FOREGROUND_THRESHOLD = 0
+MIN_FOREGROUND_THRESHOLD = 0.01
 # NORMALIZER_CHOICES defines the valid choices for WSI normalization methods.
 NORMALIZER_CHOICES= ["None","macenko"]
 # SUPPORTED_WSI_FORMATS defines the WSI formats supported by Openslide.
@@ -188,7 +188,8 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, get_chunk_id=False):
 
             slide_id = len(rowlist) + 1
 
-            new_row = {"tile_id": slide_id,
+            new_row = {"image_id": os.path.basename(output),
+                       "tile_id": slide_id,
                        "index_x": x,
                        "index_y": y,
                        "wsi_x": wsi_tiles_x[x],
@@ -205,7 +206,7 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, get_chunk_id=False):
             rowlist.append(new_row)
 
     # Create reference dataframe
-    colnames = ["tile_id", "index_x", "index_y", "wsi_x", "wsi_y", "mask_x", "mask_y", "filename", "tissue_ratio"]
+    colnames = ["image_id","tile_id", "index_x", "index_y", "wsi_x", "wsi_y", "mask_x", "mask_y", "filename", "tissue_ratio"]
     if get_chunk_id:
                 colnames.append('chunk_id')
     ref_df = pd.DataFrame(data=rowlist, columns=colnames)
@@ -216,7 +217,7 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, get_chunk_id=False):
     output = Path(output) 
 
     # Export Mask image
-    filename_tissuemask = os.path.basename(output) + "__tissue-mask_tilesize_x-%d-y-%d.png" % (
+    filename_tissuemask = os.path.basename(output) + "___tissue-mask_tilesize_x-%d-y-%d.png" % (
     thumbnail_ppt_x, thumbnail_ppt_y)
     plt.figure()
     plt.imshow(tissue_mask, cmap='Greys_r', interpolation='nearest')
@@ -225,8 +226,19 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, get_chunk_id=False):
     plt.savefig(output / filename_tissuemask, bbox_inches='tight', pad_inches=0)
     plt.close()
 
+    # Export Chunk Mask image
+    if get_chunk_id:
+        filename_tissuemask = os.path.basename(output) + "___chunk-mask_tilesize_x-%d-y-%d.png" % (
+        thumbnail_ppt_x, thumbnail_ppt_y)
+        plt.figure()
+        plt.imshow(chunk_mask, cmap='hot', interpolation='nearest')
+        plt.axis('off')
+        plt.margins(0, 0)
+        plt.savefig(output / filename_tissuemask, bbox_inches='tight', pad_inches=0)
+        plt.close()
+
     # Export Thumbnail image
-    filename_thumbnail = os.path.basename(output) + "__thumbnail_tilesize_x-%d-y-%d.png" % (
+    filename_thumbnail = os.path.basename(output) + "___thumbnail_tilesize_x-%d-y-%d.png" % (
         thumbnail_ppt_x, thumbnail_ppt_y)
     plt.figure()
     plt.imshow(thumbnail_og)
@@ -236,7 +248,7 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, get_chunk_id=False):
     plt.close()
 
     # Export CSV file
-    filename_refdf = os.path.basename(output) + "__reference_wsi-tilesize_x-%d-y-%d_mask-tilesize_x-%d-y-%d.tsv" % \
+    filename_refdf = os.path.basename(output) + "___reference_wsi-tilesize_x-%d-y-%d_mask-tilesize_x-%d-y-%d.tsv" % \
                      (ppt_x, ppt_y,thumbnail_ppt_x, thumbnail_ppt_y)
     ref_df.to_csv(output / filename_refdf, sep="\t", line_terminator="\n", index=False)
 
@@ -280,8 +292,6 @@ def export_tiles(wsi, tile_data, tile_dims, output="./", normalizer=None, final_
             aTile_img = transform.resize(aTile_img, (final_tile_size,final_tile_size,3), order=1)  # 0:nearest neighbor
 
         # Save tile image to file
-        # plt.imshow(aTile_img);plt.axis('off');plt.margins(0, 0);plt.savefig(output / aTile['filename'], bbox_inches='tight', pad_inches=0);plt.close()
-        # im = Image.fromarray(aTile_img); im.save(output / aTile['filename'])
         plt.imsave(output / aTile['filename'], aTile_img)
 
     wsi_image.close()
@@ -306,6 +316,8 @@ if __name__ == '__main__':
     # Validate arguments
     if args['verbose'] is not None:
         SET_LOG = args['verbose']
+    if args['foreground_threshold'] < MIN_FOREGROUND_THRESHOLD:
+        print("Warning: Tiles with very little foreground may fail color normalization.")
     #TODO: check normalizer reference
     #TODO: check input exists
 
@@ -332,8 +344,9 @@ if __name__ == '__main__':
 
     PRINT_LOG(LOG_INFO, "Found WSI images. Starting Processing")
     PRINT_LOG(LOG_DEBUG, "The following WSIs were found:")
-    for i,aPath in enumerate([str(s) for s in all_wsi_paths]):
-        PRINT_LOG(LOG_DEBUG, "%d:\t%s" % (i+1,aPath) )
+    if(SET_LOG >= LOG_DEBUG):
+        for i,aPath in enumerate([str(s) for s in all_wsi_paths]):
+            PRINT_LOG(LOG_DEBUG, "%d:\t%s" % (i+1,aPath) )
 
     # Process wsi images
     # i=0; wsi=all_wsi_paths[i] # TODO: remove
@@ -369,7 +382,7 @@ if __name__ == '__main__':
         tile_data_lists = np.array_split(ref_df.loc[ref_df['tissue_ratio'] > args['foreground_threshold'] ], args['cores'])
 
         PRINT_LOG(LOG_INFO, "%d - Initializing normalizer" % (i+1) )
-        PRINT_LOG(LOG_DEBUG, "%d - Normalizer method: %s \nNormalizer reference: %s" % (i+1,args['normalizer'],args['normalizer_reference']) )
+        PRINT_LOG(LOG_DEBUG, "%d - Normalizer method: %s \n%d - Normalizer reference: %s" % (i+1,args['normalizer'],i+1,args['normalizer_reference']) )
 
         # Prepare normalizer
         normalizer = setup_normalizer(normalizer_choice=args['normalizer'], ref_img_path=args['normalizer_reference'])

@@ -38,9 +38,15 @@ WSItiler tries to optimize the pre-processing of Pathology Whole Slide Images (W
 
 
 ## Contributing
-Pull requests are welcome. Ideally, please open an issue first to discuss what you would like to change.
+Pull requests are welcome. Ideally, please open an issue first to discuss what you would like to change. Please follow these steps:
 
-Make sure to clone this repository instead of downloading the package via pip.
+1. Create an issue detailing the required/desired changes.
+    * If reporting a bug, please include the run settings that caused the error and the error output in the description.
+1. Create a new branch from ```main``` and implement your changes there.
+1. Commit your changes referencing your issue number.
+1. Once you make sure your changes do not break the main use, submit a pull request and notify @jeanrclemenceau
+
+@jeanrclemenceau will review any changes and merge them to the main.
 
 ## License
 [GNU General Public License v3.0](https://choosealicense.com/licenses/gpl-3.0/)
