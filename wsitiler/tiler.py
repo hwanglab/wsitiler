@@ -189,7 +189,8 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, get_chunk_id=False):
 
             slide_id = len(rowlist) + 1
 
-            new_row = {"tile_id": slide_id,
+            new_row = {"image_id": os.path.basename(output),
+                       "tile_id": slide_id,
                        "index_x": x,
                        "index_y": y,
                        "wsi_x": wsi_tiles_x[x],
