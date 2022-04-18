@@ -190,6 +190,7 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, wsi_level=0, get_chunk_id=F
     # Valiate output path
     if not os.path.isdir(output):
         os.mkdir(output)
+    wsi_img_id = os.path.basename(output)
 
     # Get WSI details and find level
     wsi_params = describe_wsi_levels(wsi)
@@ -233,11 +234,14 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, wsi_level=0, get_chunk_id=F
 
     # Create and clean tissue mask
     tissue_mask = (thumbnail[:, :] < threshold_otsu(thumbnail))
+    tissue_mask = remove_small_objects(tissue_mask, noise_size_pix)
     tissue_mask = closing(tissue_mask, square(5))
     tissue_mask = opening(tissue_mask, square(5))
-    # tissue_mask = remove_small_objects(tissue_mask, noise_size)
-    tissue_mask = remove_small_objects(tissue_mask, noise_size_pix)
-    tissue_mask = ndi.binary_fill_holes(tissue_mask)
+
+    # # Remove holes in tissue smaller than a tile
+    # tissue_mask = np.invert(tissue_mask)
+    # tissue_mask = remove_small_objects(tissue_mask, tile_area)
+    # tissue_mask = np.invert(tissue_mask)
 
     if get_chunk_id:
         # Get labels for all chunks
@@ -281,7 +285,7 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, wsi_level=0, get_chunk_id=F
 
             slide_id = len(rowlist) + 1
 
-            new_row = {"image_id": os.path.basename(output),
+            new_row = {"image_id": wsi_img_id,
                        "tile_id": slide_id,
                        "index_x": x,
                        "index_y": y,
@@ -289,7 +293,7 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, wsi_level=0, get_chunk_id=F
                        "wsi_y": wsi_tiles_y[y],
                        "mask_x": mask_tiles_x[x],
                        "mask_y": mask_tiles_y[y],
-                       "filename": os.path.basename(output) + "__tile-n-%d_x-%d_y-%d.png" % (slide_id, x, y),
+                       "filename": wsi_img_id + "__tile-n-%d_x-%d_y-%d.png" % (slide_id, x, y),
                        "tissue_ratio": tissue_ratio
                        }
 
