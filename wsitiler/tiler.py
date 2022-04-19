@@ -165,7 +165,7 @@ def setup_normalizer(normalizer_choice, ref_img_path=None):
 
     return normalizer
 
-def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, wsi_level=0, get_chunk_id=False):
+def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, wsi_level=0, get_chunk_id=False, min_tissue=0.0):
     """
     Import a WSI, calculate foreground/background, and calculate tile coordinates to output directory.
 
@@ -175,6 +175,7 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, wsi_level=0, get_chunk_id=F
         mpt (str): Desire width and height of processed tiles in pixels or microns. Default: [%d].
         wsi_level (int): Image level to be tiled. Default: 0.
         get_chunk_id (bool): Wether or not to identify individual tissue chunks in slide (larger than a tile). Default: False
+        min_tissue (float): Minimum foreground tissue ratio for marking and saving a tile filename. Default: 0.0
 
     Output:
         Funtion exports 3 files:
@@ -309,7 +310,7 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, wsi_level=0, get_chunk_id=F
     ref_df = pd.DataFrame(data=rowlist, columns=colnames)
 
     # Remove filenames for empty tiles
-    ref_df.loc[ref_df['tissue_ratio'] == 0, "filename"] = None
+    ref_df.loc[ref_df['tissue_ratio'] > min_tissue, "filename"] = None
 
     output = Path(output) 
 
@@ -348,6 +349,25 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, wsi_level=0, get_chunk_id=F
     plt.axis('off')
     plt.margins(0, 0)
     plt.savefig(output / filename_thumbnail, bbox_inches='tight', pad_inches=0)
+    plt.close()
+
+    
+    # Export Thumbnail tiled image
+    thumbnail_tiled=np.array(thumbnail_og)[mask_tiles_y[0]:mask_tiles_y[-1] + thumbnail_ppt_y,
+                    mask_tiles_x[0]:mask_tiles_x[-1] + thumbnail_ppt_x]
+    filename_thumbnail_tiled = os.path.basename(output) + "___thumbnailtiles_tilesize_x-%d-y-%d.png" % (
+        thumbnail_ppt_x, thumbnail_ppt_y)
+    plt.figure()
+    plt.imshow(thumbnail_tiled)
+    plt.axis('off')
+    plt.margins(0, 0)
+    plt.hlines(y=np.array(mask_tiles_y)-mask_tiles_y[0],xmin=0,xmax=thumbnail_tiled.shape[1], color='b', linestyle='solid', linewidth=0.5)
+    plt.vlines(x=np.array(mask_tiles_x)-mask_tiles_x[0],ymin=0,ymax=thumbnail_tiled.shape[0], color='b', linestyle='solid', linewidth=0.5)
+    plt.plot(ref_df.loc[ref_df['tissue_ratio'] > min_tissue, "mask_x"]-mask_tiles_x[0]+thumbnail_ppt_x/2,
+                ref_df.loc[ref_df['tissue_ratio'] > min_tissue, "mask_y"]-mask_tiles_y[0]+thumbnail_ppt_y/2,
+                color='k', marker='2',linestyle="None")
+    plt.show(block=False)
+    # plt.savefig(output / filename_thumbnail_tiled, bbox_inches='tight', pad_inches=0)
     plt.close()
 
     # Export CSV file
@@ -489,7 +509,7 @@ if __name__ == '__main__':
         
         # Prepare tiling reference
         img_level = find_wsi_level(wsi_image,args['image_level'])
-        (ref_df, ppt_x, ppt_y) = prepare_tiles(wsi=wsi_image, output=str(out_tile_path), mpt=args["tile_dimensions"], wsi_level=img_level, get_chunk_id=args['tissue_chunk_id'])
+        (ref_df, ppt_x, ppt_y) = prepare_tiles(wsi=wsi_image, output=str(out_tile_path), mpt=args["tile_dimensions"], wsi_level=img_level, get_chunk_id=args['tissue_chunk_id'], min_tissue=args['foreground_threshold'])
 
         tile_ref_end_time = time.time()
         PRINT_LOG(LOG_DEBUG, "%d - Tile Reference Time: %f" % (i+1, tile_ref_end_time-tile_ref_start_time) )
