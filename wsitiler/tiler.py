@@ -174,6 +174,7 @@ def prepare_tiles(wsi, output, mpt=PIXELS_PER_TILE, wsi_level=0, get_chunk_id=Fa
         wsi_level (int): Image level to be tiled. Default: 0.
         get_chunk_id (bool): Wether or not to identify individual tissue chunks in slide (larger than a tile). Default: False
         min_tissue (float): Minimum foreground tissue ratio for marking and saving a tile filename. Default: 0.0
+        noise_size (int): Maximum size (in microns) of forground regions to be considered noise & be removed. Default: [%d]
 
     Output:
         Funtion exports 3 files:
@@ -184,7 +185,7 @@ def prepare_tiles(wsi, output, mpt=PIXELS_PER_TILE, wsi_level=0, get_chunk_id=Fa
             1. Pandas dataframe containing coordinates and tissue ratio for each tile.
             2. Pixels-per-tile value for the WSI's X axis
             3. Pixels-per-tile value for the WSI's Y axis
-    """ % (PIXELS_PER_TILE)
+    """ % (PIXELS_PER_TILE,NOISE_SIZE_MICRONS)
 
     # Valiate output path
     if not os.path.isdir(output):
