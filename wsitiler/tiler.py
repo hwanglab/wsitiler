@@ -32,12 +32,10 @@ from PIL import Image
 
 import wsitiler.normalizer as norm
 
-# MICRONS_PER_TILE defines the tile edge length used when breaking WSIs into smaller images (m x m)
-MICRONS_PER_TILE = 512
+# PIXELS_PER_TILE defines the tile edge length used when breaking WSIs into smaller images (m x m)
+PIXELS_PER_TILE = 512
 # NOISE_SIZE_MICRONS defines maximum size (in microns) for an artifact to be considered as noise in the WSI tissue mask.
 NOISE_SIZE_MICRONS = 256
-# FINAL_TILE_SIZE defines final pixel width and height of a processed tile. #TODO: remove
-# FINAL_TILE_SIZE = 224
 # MIN_FOREGROUND_THRESHOLD defines minimum tissue/background ratio to classify a tile as foreground.
 MIN_FOREGROUND_THRESHOLD = 0.01
 # NORMALIZER_CHOICES defines the valid choices for WSI normalization methods.
@@ -165,7 +163,7 @@ def setup_normalizer(normalizer_choice, ref_img_path=None):
 
     return normalizer
 
-def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, wsi_level=0, get_chunk_id=False, min_tissue=0.0):
+def prepare_tiles(wsi, output, mpt=PIXELS_PER_TILE, wsi_level=0, get_chunk_id=False, min_tissue=0.0, noise_size=NOISE_SIZE_MICRONS):
     """
     Import a WSI, calculate foreground/background, and calculate tile coordinates to output directory.
 
@@ -186,7 +184,7 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, wsi_level=0, get_chunk_id=F
             1. Pandas dataframe containing coordinates and tissue ratio for each tile.
             2. Pixels-per-tile value for the WSI's X axis
             3. Pixels-per-tile value for the WSI's Y axis
-    """ % (MICRONS_PER_TILE)
+    """ % (PIXELS_PER_TILE)
 
     # Valiate output path
     if not os.path.isdir(output):
@@ -223,12 +221,9 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, wsi_level=0, get_chunk_id=F
     thumbnail = (rgb2gray(thumbnail) * 255).astype(np.uint8)
 
     # calculate mask parameters
-    # thumbnail_ratio = wsi.dimensions[0] / thumbnail.shape[1]  # wsi dimensions: (x,y); thumbnail dimensions: (rows,cols)
-    # thumbnail_mpp = float(wsi.properties['openslide.mpp-x']) * thumbnail_ratio
     thumbnail_ratio = wsi_width / thumbnail.shape[1]  # wsi dimensions: (x,y); thumbnail dimensions: (rows,cols)
     thumbnail_mpp = mpp * thumbnail_ratio
-    noise_size_pix = round(NOISE_SIZE_MICRONS / thumbnail_mpp)
-    # noise_size = round(noise_size_pix / thumbnail_ratio)
+    noise_size_pix = round(noise_size / thumbnail_mpp)
     thumbnail_ppt_x = ceil(ppt_x / thumbnail_ratio)
     thumbnail_ppt_y = ceil(ppt_y / thumbnail_ratio)
     tile_area = thumbnail_ppt_x*thumbnail_ppt_y
@@ -284,7 +279,7 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, wsi_level=0, get_chunk_id=F
             # Calculate tissue ratio for tile
             tissue_ratio = np.sum(aTile) / aTile.size
 
-            slide_id = len(rowlist) + 1
+            slide_id = len(rowlist)
 
             new_row = {"image_id": wsi_img_id,
                        "tile_id": slide_id,
@@ -310,7 +305,7 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, wsi_level=0, get_chunk_id=F
     ref_df = pd.DataFrame(data=rowlist, columns=colnames)
 
     # Remove filenames for empty tiles
-    ref_df.loc[ref_df['tissue_ratio'] > min_tissue, "filename"] = None
+    ref_df.loc[ref_df['tissue_ratio'] < min_tissue, "filename"] = None
 
     output = Path(output) 
 
@@ -323,7 +318,8 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, wsi_level=0, get_chunk_id=F
     plt.imshow(tissue_mask_trimmed, cmap='Greys_r', interpolation='nearest')
     plt.axis('off')
     plt.margins(0, 0)
-    plt.savefig(output / filename_tissuemask, bbox_inches='tight', pad_inches=0)
+    # plt.savefig(output / filename_tissuemask, bbox_inches='tight', pad_inches=0)
+    plt.imsave(output / filename_tissuemask, tissue_mask_trimmed,cmap='Greys_r')
     plt.close()
 
     # Export Chunk Mask image
@@ -336,7 +332,8 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, wsi_level=0, get_chunk_id=F
         plt.imshow(chunk_mask_trimmed, cmap='hot', interpolation='nearest')
         plt.axis('off')
         plt.margins(0, 0)
-        plt.savefig(output / filename_chunkmask, bbox_inches='tight', pad_inches=0)
+        # plt.savefig(output / filename_chunkmask, bbox_inches='tight', pad_inches=0)
+        plt.imsave(output / filename_chunkmask, chunk_mask_trimmed)
         plt.close()
 
     # Export Thumbnail image
@@ -348,26 +345,27 @@ def prepare_tiles(wsi, output, mpt=MICRONS_PER_TILE, wsi_level=0, get_chunk_id=F
     plt.imshow(thumbnail_trimmed)
     plt.axis('off')
     plt.margins(0, 0)
-    plt.savefig(output / filename_thumbnail, bbox_inches='tight', pad_inches=0)
+    # plt.savefig(output / filename_thumbnail, bbox_inches='tight', pad_inches=0)
+    plt.imsave(output / filename_thumbnail, thumbnail_trimmed)
     plt.close()
 
     
     # Export Thumbnail tiled image
     thumbnail_tiled=np.array(thumbnail_og)[mask_tiles_y[0]:mask_tiles_y[-1] + thumbnail_ppt_y,
                     mask_tiles_x[0]:mask_tiles_x[-1] + thumbnail_ppt_x]
-    filename_thumbnail_tiled = os.path.basename(output) + "___thumbnailtiles_tilesize_x-%d-y-%d.png" % (
+    filename_thumbnail_tiled = os.path.basename(output) + "___thumbnail-tiles_tilesize_x-%d-y-%d.png" % (
         thumbnail_ppt_x, thumbnail_ppt_y)
     plt.figure()
     plt.imshow(thumbnail_tiled)
     plt.axis('off')
     plt.margins(0, 0)
-    plt.hlines(y=np.array(mask_tiles_y)-mask_tiles_y[0],xmin=0,xmax=thumbnail_tiled.shape[1], color='b', linestyle='solid', linewidth=0.5)
-    plt.vlines(x=np.array(mask_tiles_x)-mask_tiles_x[0],ymin=0,ymax=thumbnail_tiled.shape[0], color='b', linestyle='solid', linewidth=0.5)
+    plt.hlines(y=np.array(mask_tiles_y)-mask_tiles_y[0],xmin=0,xmax=thumbnail_tiled.shape[1], color='b', linestyle='solid', linewidth=0.2)
+    plt.vlines(x=np.array(mask_tiles_x)-mask_tiles_x[0],ymin=0,ymax=thumbnail_tiled.shape[0], color='b', linestyle='solid', linewidth=0.2)
     plt.plot(ref_df.loc[ref_df['tissue_ratio'] > min_tissue, "mask_x"]-mask_tiles_x[0]+thumbnail_ppt_x/2,
                 ref_df.loc[ref_df['tissue_ratio'] > min_tissue, "mask_y"]-mask_tiles_y[0]+thumbnail_ppt_y/2,
-                color='k', marker='2',linestyle="None")
-    plt.show(block=False)
-    # plt.savefig(output / filename_thumbnail_tiled, bbox_inches='tight', pad_inches=0)
+                color='k', marker='2', markersize=0.2, linestyle="None")
+    plt.savefig(output / filename_thumbnail_tiled, bbox_inches='tight', pad_inches=0, format="png", dpi=600)
+    
     plt.close()
 
     # Export CSV file
@@ -398,11 +396,12 @@ def export_tiles(wsi, tile_data, tile_dims, output="./", normalizer=None, wsi_le
 
     # Process and export each tile sequentially
     for index, aTile in tile_data.iterrows():
+        # index=0;aTile=tile_data.iloc[index]#TODO:remove
         # Extract tile region
         aTile_img = wsi_image.read_region((aTile["wsi_x"], aTile["wsi_y"]), level=wsi_level,
                                 size=(tile_dims['x'], tile_dims['y']))
         ##TODO: check if this causes IO on every call & if it'd be better to read 1 region per list & extract tiles using numpy
-
+        # plt.imshow(aTile_img);plt.show(block=False);#TODO: remove
         #Convert to RGB array
         aTile_img = np.array( aTile_img.convert('RGB') )
 
@@ -423,18 +422,17 @@ if __name__ == '__main__':
     ap.add_argument('-i', '--input', default="./", help='Input directory or WSI image. Default: [./]')
     ap.add_argument('-o', '--output', default="./", help='Output directory Default: [./]')
     ap.add_argument('-c', '--cores', default=mp.cpu_count(), type=int, help='Numbers of processes to be spun up in parallel to process each WSI. Default: [%d]' % mp.cpu_count() )
-    ap.add_argument('-d', '--tile_dimensions', default=MICRONS_PER_TILE, type=str, help="Defines the tile edge length used when breaking WSIs into smaller images. Provide integer value for pixel size, for micron size use format: XXum. Default: [%d]" % MICRONS_PER_TILE)
+    ap.add_argument('-d', '--tile_dimensions', default=PIXELS_PER_TILE, type=str, help="Defines the tile edge length used when breaking WSIs into smaller images. Provide integer value for pixel size, for micron size use format: XXum. Default: [%d]" % PIXELS_PER_TILE)
     ap.add_argument('-l', '--image_level', default="0", type=str, help="Defines the level of magnification to be used for image tiling. Query by the following formats: Level (AA), Magnification (AAx), Resolution (A.AAmpp). Default: [0] - Maximum magnification")
     ap.add_argument('-n', '--normalizer', default="macenko", choices=NORMALIZER_CHOICES, help="Select the method for WSI color normalization. Default: 'macenko'. Options: [%s]" % ( ", ".join(NORMALIZER_CHOICES) ))
+    ap.add_argument('-z', '--noise_size', default=NOISE_SIZE_MICRONS, type=int, help="Defines the maximum size in microns of an item in the binary mask to be considered noise. Default: [%d]" % NOISE_SIZE_MICRONS)
     ap.add_argument('-f', '--foreground_threshold', default=MIN_FOREGROUND_THRESHOLD, type=float, help="Defines the minimum tissue/background ratio for a tile to be considered foreground. Default: [%d]" % MIN_FOREGROUND_THRESHOLD)
     ap.add_argument('-r', '--normalizer_reference', default="None", type=str, help='H & E image used as a reference for normalization. Default: [wsitiler/normalizer/macenko_reference_img.png]')
     ap.add_argument('-v', '--verbose', action='count', help='Print updates and reports as program executes. Provide the following number of "v" for the following settings: [%d: Error. %d: Warning, %d: Info, %d: Debug]' % (LOG_ERROR,LOG_WARNING,LOG_INFO,LOG_DEBUG) ) #TODO: setup logging appropriately
     ap.add_argument('-t', '--tissue_chunk_id', action='store_true', help='Set this flag to determine tissue chunk ids for each tile: Default: [False]')
-    ap.add_argument('-p', '--image_parameters', action='store_true', help='Set this flag to Display the image parameters for the first WSI found. Default: [False]')    
+    ap.add_argument('-p', '--image_parameters', action='store_true', help='Set this flag to Display the image parameters for the first WSI found. Default: [False]')  
+    ap.add_argument('-y', '--dry_run', action='store_true', help='Set this flag to run tile prep and heamaps without tiling the image (Good for testing parameters). Default: [False]')  
     args = vars(ap.parse_args())
-
-    # args = {'input': '/home/clemenj/Data/testWSI/SG_40.svs', 'output': '/home/clemenj/Data/testWSI/test_tiles/', 'cores': 80, 'tile_dimensions': '512', 'image_level': '20x', 'normalizer': 'None', 'foreground_threshold': 0.01, 'normalizer_reference': 'None', 'verbose': 4, 'tissue_chunk_id': True, 'image_parameters': False}
-    # {'input': '/home/clemenj/Data/testWSI/SG_38.svs', 'output': '/home/clemenj/Data/testWSI/test_tiles/', 'cores': 80, 'tile_dimensions': 256, 'normalizer': 'macenko', 'final_tile_size': 224, 'foreground_threshold': 0.01, 'normalizer_reference': 'None', 'verbose': 4, 'tissue_chunk_id': True} ##TODO remove
 
     # Validate arguments
     if args['verbose'] is not None:
@@ -515,7 +513,14 @@ if __name__ == '__main__':
         PRINT_LOG(LOG_DEBUG, "%d - Tile Reference Time: %f" % (i+1, tile_ref_end_time-tile_ref_start_time) )
 
         # Split non-empty tiles evenly for multiprocessing
-        tile_data_lists = np.array_split(ref_df.loc[ref_df['tissue_ratio'] > args['foreground_threshold'] ], args['cores'])
+        tile_data_lists = np.array_split( ref_df.loc[ref_df['tissue_ratio'] >= args['foreground_threshold']], args['cores'])
+
+        # Terminate execution if dry run
+        if args['dry_run']:
+            PRINT_LOG(LOG_INFO ,"Finished Dry Run" )
+            total_end_time = time.time()
+            PRINT_LOG(LOG_DEBUG, "Total Time: %f" % (total_end_time-total_start_time) )
+            quit()
 
         PRINT_LOG(LOG_INFO, "%d - Initializing normalizer" % (i+1) )
         PRINT_LOG(LOG_DEBUG, "%d - Normalizer method: %s \n%d - Normalizer reference: %s" % (i+1,args['normalizer'],i+1,args['normalizer_reference']) )
