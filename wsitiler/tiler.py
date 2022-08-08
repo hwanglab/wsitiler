@@ -6,6 +6,7 @@ Author: Jean R Clemenceau
 Date Created: 11/11/2021
 """
 
+import matplotlib
 import openslide
 import argparse
 import os
@@ -15,6 +16,7 @@ import numpy as np
 import pandas as pd
 import multiprocessing as mp
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 import traceback
 
 from PIL import Image
@@ -319,7 +321,6 @@ def prepare_tiles(wsi, output, mpt=PIXELS_PER_TILE, wsi_level=0, get_chunk_id=Fa
     plt.imshow(tissue_mask_trimmed, cmap='Greys_r', interpolation='nearest')
     plt.axis('off')
     plt.margins(0, 0)
-    # plt.savefig(output / filename_tissuemask, bbox_inches='tight', pad_inches=0)
     plt.imsave(output / filename_tissuemask, tissue_mask_trimmed,cmap='Greys_r')
     plt.close()
 
@@ -329,11 +330,15 @@ def prepare_tiles(wsi, output, mpt=PIXELS_PER_TILE, wsi_level=0, get_chunk_id=Fa
                     mask_tiles_x[0]:mask_tiles_x[-1] + thumbnail_ppt_x]
         filename_chunkmask = os.path.basename(output) + "___chunk-mask_tilesize_x-%d-y-%d.png" % (
         thumbnail_ppt_x, thumbnail_ppt_y)
+
+        #Setup colormap for black background
+        a_cmap = cm.get_cmap("viridis").copy()
+        a_cmap.set_under(color='black')
+
         plt.figure()
-        plt.imshow(chunk_mask_trimmed, cmap='hot', interpolation='nearest')
+        plt.imshow(chunk_mask_trimmed, cmap=a_cmap, interpolation='nearest', vmin=0.5)
         plt.axis('off')
         plt.margins(0, 0)
-        # plt.savefig(output / filename_chunkmask, bbox_inches='tight', pad_inches=0)
         plt.imsave(output / filename_chunkmask, chunk_mask_trimmed)
         plt.close()
 
@@ -346,7 +351,6 @@ def prepare_tiles(wsi, output, mpt=PIXELS_PER_TILE, wsi_level=0, get_chunk_id=Fa
     plt.imshow(thumbnail_trimmed)
     plt.axis('off')
     plt.margins(0, 0)
-    # plt.savefig(output / filename_thumbnail, bbox_inches='tight', pad_inches=0)
     plt.imsave(output / filename_thumbnail, thumbnail_trimmed)
     plt.close()
 
@@ -557,3 +561,4 @@ if __name__ == '__main__':
     PRINT_LOG(LOG_INFO ,"Finished Processing All WSIs" )
     total_end_time = time.time()
     PRINT_LOG(LOG_DEBUG, "Total Time: %f" % (total_end_time-total_start_time) )
+  
