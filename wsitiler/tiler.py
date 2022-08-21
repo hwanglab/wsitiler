@@ -191,9 +191,12 @@ def prepare_tiles(wsi, output, mpt=PIXELS_PER_TILE, wsi_level=0, get_chunk_id=Fa
     """ % (PIXELS_PER_TILE,NOISE_SIZE_MICRONS)
 
     # Valiate output path
-    if not os.path.isdir(output):
-        os.mkdir(output)
     wsi_img_id = os.path.basename(output)
+
+    output = Path(output) 
+    output = output / "info"
+    if not output.is_dir():
+        output.mkdir(parents=True)
 
     # Get WSI details and find level
     wsi_params = describe_wsi_levels(wsi)
@@ -218,6 +221,8 @@ def prepare_tiles(wsi, output, mpt=PIXELS_PER_TILE, wsi_level=0, get_chunk_id=Fa
             raise ValueError("Tile length format is not valid. Provide integer value or microns using 'XXum'.")
 
     ppt_x = ppt_y = pixels
+
+    # PRINT_LOG(LOG_DEBUG, "img_id: %s\tresolution: %s\tmpp: %f\tppt: %s" % (wsi_img_id,resolution,mpp,str(pixels)) )
 
     # Get thumbnail for tissue mask
     thumbnail_og = wsi.get_thumbnail(size=(wsi.level_dimensions[-1][0], wsi.level_dimensions[-1][1]))
@@ -250,8 +255,9 @@ def prepare_tiles(wsi, output, mpt=PIXELS_PER_TILE, wsi_level=0, get_chunk_id=Fa
         # Filter out chunks smaller than tile size
         (chunk_label, chunk_size) = np.unique(chunk_mask,return_counts=True)
         filtered_chunks = chunk_label[ chunk_size < tile_area ]
+        bg_label = np.unique(chunk_mask[tissue_mask == 0])
         for l in filtered_chunks:
-            chunk_mask[chunk_mask == l] = 0
+            chunk_mask[chunk_mask == l] = bg_label
 
     # Calculate margin according to ppt sizes
     wsi_x_tile_excess = wsi_width % ppt_x
@@ -311,15 +317,13 @@ def prepare_tiles(wsi, output, mpt=PIXELS_PER_TILE, wsi_level=0, get_chunk_id=Fa
     # Remove filenames for empty tiles
     ref_df.loc[ref_df['tissue_ratio'] < min_tissue, "filename"] = None
 
-    output = Path(output) 
-
     # Export Mask image
     tissue_mask_trimmed=tissue_mask[mask_tiles_y[0]:mask_tiles_y[-1] + thumbnail_ppt_y,
                     mask_tiles_x[0]:mask_tiles_x[-1] + thumbnail_ppt_x]
     filename_tissuemask = os.path.basename(output) + "___tissue-mask_tilesize_x-%d-y-%d.png" % (
     thumbnail_ppt_x, thumbnail_ppt_y)
     plt.figure()
-    plt.imshow(tissue_mask_trimmed, cmap='Greys_r', interpolation='nearest')
+    # plt.imshow(tissue_mask_trimmed, cmap='Greys_r', interpolation='nearest')
     plt.axis('off')
     plt.margins(0, 0)
     plt.imsave(output / filename_tissuemask, tissue_mask_trimmed,cmap='Greys_r')
@@ -333,14 +337,15 @@ def prepare_tiles(wsi, output, mpt=PIXELS_PER_TILE, wsi_level=0, get_chunk_id=Fa
         thumbnail_ppt_x, thumbnail_ppt_y)
 
         #Setup colormap for black background
+        chunk_mask_trimmed[chunk_mask_trimmed==bg_label] = -1
         a_cmap = cm.get_cmap("viridis").copy()
         a_cmap.set_under(color='black')
 
         plt.figure()
-        plt.imshow(chunk_mask_trimmed, cmap=a_cmap, interpolation='nearest', vmin=0.5)
+        # plt.imshow(chunk_mask_trimmed, cmap=a_cmap, interpolation='nearest', vmin=0)
         plt.axis('off')
         plt.margins(0, 0)
-        plt.imsave(output / filename_chunkmask, chunk_mask_trimmed)
+        plt.imsave(output / filename_chunkmask, chunk_mask_trimmed, vmin=0)
         plt.close()
 
     # Export Thumbnail image
@@ -398,7 +403,12 @@ def export_tiles(wsi, tile_data, tile_dims, output="./", normalizer=None, wsi_le
     """
     # Open and prepare input
     wsi_image = openslide.open_slide(wsi)
-    output = Path(output)
+
+    # Prepare output directory
+    output = Path(output) 
+    output = output / "tiles"
+    if not output.is_dir():
+        output.mkdir(parents=True)
 
     # Process and export each tile sequentially
     for index, aTile in tile_data.iterrows():
@@ -568,4 +578,3 @@ if __name__ == '__main__':
     PRINT_LOG(LOG_INFO ,"Finished Processing All WSIs" )
     total_end_time = time.time()
     PRINT_LOG(LOG_DEBUG, "Total Time: %f" % (total_end_time-total_start_time) )
-  
