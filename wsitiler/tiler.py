@@ -6,7 +6,6 @@ Author: Jean R Clemenceau
 Date Created: 11/11/2021
 """
 
-import matplotlib
 import openslide
 import argparse
 import os
@@ -44,6 +43,8 @@ MIN_FOREGROUND_THRESHOLD = 0.01
 NORMALIZER_CHOICES= ["None","macenko"]
 # SUPPORTED_WSI_FORMATS defines the WSI formats supported by Openslide.
 SUPPORTED_WSI_FORMATS = [".svs",".ndpi",".vms",".vmu",".scn",".mrxs",".tiff",".svslide",".tif",".bif"]
+# SPPORTED TILE FILE EXPORT FORMATS
+EXPORT_FORMATS = ['png','npy']
 
 # Log Levels
 LOG_ERROR = 0
@@ -165,7 +166,7 @@ def setup_normalizer(normalizer_choice, ref_img_path=None):
 
     return normalizer
 
-def prepare_tiles(wsi, output, mpt=PIXELS_PER_TILE, wsi_level=0, get_chunk_id=False, min_tissue=0.0, noise_size=NOISE_SIZE_MICRONS):
+def prepare_tiles(wsi, output, mpt=PIXELS_PER_TILE, wsi_level=0, get_chunk_id=False, min_tissue=0.0, noise_size=NOISE_SIZE_MICRONS, tile_export_format="png"):
     """
     Import a WSI, calculate foreground/background, and calculate tile coordinates to output directory.
 
@@ -292,7 +293,7 @@ def prepare_tiles(wsi, output, mpt=PIXELS_PER_TILE, wsi_level=0, get_chunk_id=Fa
                        "wsi_y": wsi_tiles_y[y],
                        "mask_x": mask_tiles_x[x],
                        "mask_y": mask_tiles_y[y],
-                       "filename": wsi_img_id + "__tile-n-%d_x-%d_y-%d.png" % (slide_id, x, y),
+                       "filename": wsi_img_id + "__tile-n-%d_x-%d_y-%d.%s" % (slide_id, x, y, tile_export_format),
                        "tissue_ratio": tissue_ratio
                        }
 
@@ -415,7 +416,12 @@ def export_tiles(wsi, tile_data, tile_dims, output="./", normalizer=None, wsi_le
             aTile_img = normalizer.transform(aTile_img)
 
         # Save tile image to file
-        plt.imsave(output / aTile['filename'], aTile_img)
+        if aTile['filename'].endswith('.png'):
+            plt.imsave(output / aTile['filename'], aTile_img)
+        elif aTile['filename'].endswith('.npy'):
+            np.save(file=output / aTile['filename'], arr=aTile_img)
+        else:
+            PRINT_LOG(LOG_ERROR,"Tile export format not supported. Tile not exported: %s" % aTile['filename'])
 
     wsi_image.close()
     return
@@ -432,6 +438,7 @@ if __name__ == '__main__':
     ap.add_argument('-n', '--normalizer', default="macenko", choices=NORMALIZER_CHOICES, help="Select the method for WSI color normalization. Default: 'macenko'. Options: [%s]" % ( ", ".join(NORMALIZER_CHOICES) ))
     ap.add_argument('-z', '--noise_size', default=NOISE_SIZE_MICRONS, type=int, help="Defines the maximum size in microns of an item in the binary mask to be considered noise. Default: [%d]" % NOISE_SIZE_MICRONS)
     ap.add_argument('-f', '--foreground_threshold', default=MIN_FOREGROUND_THRESHOLD, type=float, help="Defines the minimum tissue/background ratio for a tile to be considered foreground. Default: [%d]" % MIN_FOREGROUND_THRESHOLD)
+    ap.add_argument('-e', '--tile_export_format', default=EXPORT_FORMATS[0], choices=EXPORT_FORMATS, help="Select the format used to export tile files. Default: '%s'. Options: [%s]" % ( EXPORT_FORMATS[0],", ".join(EXPORT_FORMATS) ))
     ap.add_argument('-r', '--normalizer_reference', default="None", type=str, help='H & E image used as a reference for normalization. Default: [wsitiler/normalizer/macenko_reference_img.png]')
     ap.add_argument('-v', '--verbose', action='count', help='Print updates and reports as program executes. Provide the following number of "v" for the following settings: [%d: Error. %d: Warning, %d: Info, %d: Debug]' % (LOG_ERROR,LOG_WARNING,LOG_INFO,LOG_DEBUG) ) #TODO: setup logging appropriately
     ap.add_argument('-t', '--tissue_chunk_id', action='store_true', help='Set this flag to determine tissue chunk ids for each tile: Default: [False]')
@@ -512,7 +519,7 @@ if __name__ == '__main__':
         
         # Prepare tiling reference
         img_level = find_wsi_level(wsi_image,args['image_level'])
-        (ref_df, ppt_x, ppt_y) = prepare_tiles(wsi=wsi_image, output=str(out_tile_path), mpt=args["tile_dimensions"], wsi_level=img_level, get_chunk_id=args['tissue_chunk_id'], min_tissue=args['foreground_threshold'])
+        (ref_df, ppt_x, ppt_y) = prepare_tiles(wsi=wsi_image, output=str(out_tile_path), mpt=args["tile_dimensions"], wsi_level=img_level, get_chunk_id=args['tissue_chunk_id'], min_tissue=args['foreground_threshold'],tile_export_format=args['tile_export_format'])
 
         tile_ref_end_time = time.time()
         PRINT_LOG(LOG_DEBUG, "%d - Tile Reference Time: %f" % (i+1, tile_ref_end_time-tile_ref_start_time) )
