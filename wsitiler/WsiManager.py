@@ -24,7 +24,7 @@ import traceback
 from PIL import Image
 from pathlib import Path
 from math import ceil, floor
-from skimage import transform
+from skimage import measure, transform
 from scipy import ndimage as ndi
 from skimage.color import rgb2gray
 from skimage.filters import threshold_otsu
@@ -45,6 +45,8 @@ class WsiManager:
 
     # SUPPORTED_WSI_FORMATS defines the WSI formats supported by Openslide.
     SUPPORTED_WSI_FORMATS = [".svs",".ndpi",".vms",".vmu",".scn",".mrxs",".tiff",".svslide",".tif",".bif"]
+    # Background label for segmented tissue
+    BACKGROUND_LABEL = -1
 
     #Constructor with Openslide object
     def __init__(self,wsi_src: Path=None, wsi: openslide.OpenSlide=None, wsi_id: str=None, outdir: Path=None, mpt: str=PIXELS_PER_TILE, wsi_level: int=0, min_tissue: float=MIN_FOREGROUND_THRESHOLD, noise_size: int=NOISE_SIZE_MICRONS, segment_tissue: bool=False):
@@ -194,8 +196,10 @@ class WsiManager:
             (chunk_label, chunk_size) = np.unique(self.tissue_chunk_mask,return_counts=True)
             filtered_chunks = chunk_label[ chunk_size < tile_area ]
             bg_label = np.unique(self.tissue_chunk_mask[self.tissue_mask == 0])[0]
+            self.tissue_chunk_mask[self.tissue_chunk_mask==bg_label] = WsiManager.BACKGROUND_LABEL
+
             for l in filtered_chunks:
-                self.tissue_chunk_mask[self.tissue_chunk_mask == l] = bg_label
+                self.tissue_chunk_mask[self.tissue_chunk_mask == l] = WsiManager.BACKGROUND_LABEL
 
         # Populate tile reference table###########
         rowlist = []
@@ -231,11 +235,11 @@ class WsiManager:
                     
                     # Determine chunk id by most prevalent non-background ID
                     flat_chunk_tile = chunk_tile.flatten()
-                    flat_chunk_tile = flat_chunk_tile[flat_chunk_tile != bg_label]
+                    flat_chunk_tile = flat_chunk_tile[flat_chunk_tile != WsiManager.BACKGROUND_LABEL]
                     if(len(flat_chunk_tile) > 1):
                         chunk_id = np.bincount(flat_chunk_tile).argmax()
                     else:
-                        chunk_id = bg_label
+                        chunk_id = WsiManager.BACKGROUND_LABEL
                     
                     new_row['chunk_id'] = chunk_id
 
@@ -265,14 +269,13 @@ class WsiManager:
         (chunk_label, chunk_size) = np.unique(self.tissue_chunk_mask,return_counts=True)
         filtered_chunks = chunk_label[ chunk_size < tile_area ]
         bg_label = np.unique(self.tissue_chunk_mask[self.tissue_mask == 0])[0]
-        new_bg_label = -1
-        self.tissue_chunk_mask[self.tissue_chunk_mask==bg_label] = new_bg_label
+        self.tissue_chunk_mask[self.tissue_chunk_mask==bg_label] = WsiManager.BACKGROUND_LABEL
 
         for l in filtered_chunks:
-            self.tissue_chunk_mask[self.tissue_chunk_mask == l] = new_bg_label
+            self.tissue_chunk_mask[self.tissue_chunk_mask == l] = WsiManager.BACKGROUND_LABEL
 
         # Save chunk_id data to tiles
-        self.tile_data['chunk_id'] = new_bg_label
+        self.tile_data['chunk_id'] = WsiManager.BACKGROUND_LABEL
 
         #Iterate over non-background tiles
         for i,row in self.tile_data[ ~pd.isnull(self.tile_data.tilename) ].iterrows():
@@ -287,7 +290,7 @@ class WsiManager:
             if(len(flat_chunk_tile) > 1):
                 chunk_id = np.bincount(flat_chunk_tile).argmax()
             else:
-                chunk_id = new_bg_label
+                chunk_id = WsiManager.BACKGROUND_LABEL
 
             # save value
             self.tile_data.at[i,'chunk_id'] = chunk_id
@@ -340,6 +343,8 @@ class WsiManager:
         tissue_mask_path = self.export_bin_mask(outdir= final_outdir, export=True)
         tissue_chunk_mask_path = self.export_chunk_mask(outdir= final_outdir, export=True)
         thumbnail_tiles_path = self.export_thumbnail(outdir= final_outdir, export=True, showTiles=True)
+        tissue_chunk_mask_labels_path = self.export_chunk_mask(outdir= final_outdir, export=True, labels=True)
+
 
         # Save object parameters as yml
         instance_dict = self.__dict__.copy()
@@ -370,7 +375,7 @@ class WsiManager:
         
         return(None)
 
-    def export_chunk_mask(self, outdir: Path=None, show: bool=False, export: bool=True):
+    def export_chunk_mask(self, outdir: Path=None, show: bool=False, export: bool=True, labels=False):
         """
         Exports and/or displays the tissue_chunk_mask as an image from a WsiManager object, if available.
 
@@ -378,6 +383,7 @@ class WsiManager:
             outdir (Path): File path to directory to contain collection of WsiManager output directories. Optional if WsiManager outdir field has been set.
             show (bool): Wether or not to display the mask as a plot. Default: [False]
             export (bool): Wether or not to export the mask as a PNG file. Default: [True]
+            labels (bool): Wether or not to display the tissue labels in the image. Default: [False]
         Output:
             If 'export' is enabled, returns filepath to image, 'None' otherwise.
             Note: Places image in directory: '<outdir>/<wsi_id>/info/' unless a 'outdir' is given.
@@ -403,8 +409,9 @@ class WsiManager:
                 else:
                     final_outdir = self.outdir / self.wsi_id / "info"
 
-                filename_chunkmask = self.wsi_id + "___chunk-mask_tilesize_x-%d-y-%d.png" % (
-                    self.thumbnail_ppt_x, self.thumbnail_ppt_y)
+                hasLabelStr = "-labeled" if labels else ""
+                filename_chunkmask = self.wsi_id + "___chunk_mask%s_tilesize_x-%d-y-%d.png" % (
+                    hasLabelStr,self.thumbnail_ppt_x, self.thumbnail_ppt_y)
                 
                 finalPath = final_outdir / filename_chunkmask
 
@@ -412,16 +419,22 @@ class WsiManager:
             a_cmap = cm.get_cmap("viridis").copy()
             a_cmap.set_under(color='black')
 
-            #TODO: Add labels option
-
             # Show and/or export plot
             plt.figure()
             plt.axis('off')
             plt.margins(0, 0)
-            if show:
-                plt.imshow(self.tissue_chunk_mask, cmap=a_cmap, interpolation='nearest', vmin=0)
+            plt.imshow(self.tissue_chunk_mask, cmap=a_cmap, interpolation='nearest', vmin=0)
+            if labels:
+                measures = measure.regionprops_table(self.tissue_chunk_mask, properties={'label','centroid'})
+                measures = pd.DataFrame(measures)
+                for i,props in measures.iterrows():
+                    plt.text(props['centroid-1'], props['centroid-0'],int(props['label']),
+                        fontweight='bold',fontsize="medium",color="white")
             if export:
-                plt.imsave(finalPath, self.tissue_chunk_mask, cmap=a_cmap, vmin=0)
+                # plt.imsave(finalPath, self.tissue_chunk_mask, cmap=a_cmap, vmin=0)
+                plt.savefig(finalPath, bbox_inches='tight', pad_inches=0, format="png", dpi=600)
+            if not show:
+                plt.close()
 
         return(finalPath)
 
@@ -567,6 +580,10 @@ class WsiManager:
     @property
     def __str__(self):
         return f'WsiManager(ID:{self.wsi_id}; Shape: {self.shape}); Tissue Tiles: n={len(self.tile_data[ ~pd.isnull(self.tile_data.tilename) ])}'
+
+    # @property
+    # def __repr__(self):
+    #     return f'WsiManager(ID:{self.wsi_id}; Shape: {self.shape}); Tissue Tiles: n={len(self.tile_data[ ~pd.isnull(self.tile_data.tilename) ])}'
 
 
     # #TODO finsh
