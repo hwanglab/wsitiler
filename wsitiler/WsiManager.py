@@ -22,6 +22,7 @@ import matplotlib.cm as cm
 import traceback
 
 from PIL import Image
+from typing import List
 from pathlib import Path
 from math import ceil, floor
 from skimage import measure, transform
@@ -49,7 +50,7 @@ class WsiManager:
     BACKGROUND_LABEL = -1
 
     #Constructor with Openslide object
-    def __init__(self,wsi_src: Path=None, wsi: openslide.OpenSlide=None, wsi_id: str=None, outdir: Path=None, mpt: str=PIXELS_PER_TILE, wsi_level: int=0, min_tissue: float=MIN_FOREGROUND_THRESHOLD, noise_size: int=NOISE_SIZE_MICRONS, segment_tissue: bool=False):
+    def __init__(self,wsi_src: Path=None, wsi: openslide.OpenSlide=None, wsi_id: str=None, outdir: Path=None, mpt: str=PIXELS_PER_TILE, wsi_level: int=0, min_tissue: float=MIN_FOREGROUND_THRESHOLD, noise_size: int=NOISE_SIZE_MICRONS, segment_tissue: bool=False, normalization: List[str]=['no_norm']):
         """
         WsiManager constructor based on an OpenSlide object and additional parameters.
 
@@ -63,6 +64,7 @@ class WsiManager:
             min_tissue (float): Minimum foreground tissue ratio for marking and saving a tile. Default: [%d]
             noise_size (int): Maximum size (in microns) of forground regions to be considered noise & be removed. Default: [%d]
             segment_tissue (bool): Generate tissue chunk segmentation mask and assign labels to corresponding tiles. Default: [False]
+            normalization (List[str]): List of normalization names to appy to during tiling (use  'no_norm' for no normalization). Default: [no_norm]
 
         Output:
             new WSIManager object
@@ -70,6 +72,11 @@ class WsiManager:
 
         # Validate and set metadata parameters
         self.img_lvl = wsi_level
+        if all([isinstance(i, str) for i in normalization]):
+            #TODO check all normalization methods are valid
+            self.normalization = normalization
+        else:
+            raise ValueError('Requested normalization values are not in list of string format')
 
         #Validate OpenSlide WSI object
         if wsi is not None and not isinstance(wsi,openslide.OpenSlide):
@@ -345,31 +352,42 @@ class WsiManager:
         thumbnail_tiles_path = self.export_thumbnail(outdir= final_outdir, export=True, showTiles=True)
         tissue_chunk_mask_labels_path = self.export_chunk_mask(outdir= final_outdir, export=True, labels=True)
 
-
-        # Save object parameters as yml
+        # Prepare instance attributes for JSON file
         instance_dict = self.__dict__.copy()
-        if 'wsi_src' in instance_dict.keys():
-            instance_dict['wsi_src'] = str(self.wsi_src)
-        if 'outdir' in instance_dict.keys():
-            instance_dict['outdir'] = str(self.outdir)
 
-        #todo: fix serialization
-        if 'thumbnail' in instance_dict.keys():
-                    del(instance_dict['outdir'])
-                    # instance_dict['outdir'] = self.thumbnail.tolist()
-        if 'tissue_mask' in instance_dict.keys():
-                    del(instance_dict['tissue_mask'])
-                    # instance_dict['tissue_mask'] = self.tissue_mask.tolist()
-        if 'tissue_chunk_mask' in instance_dict.keys():
-                    del(instance_dict['tissue_chunk_mask'])
-                    # instance_dict['tissue_chunk_mask'] = self.tissue_chunk_mask.tolist()
-
+        #save record of expirted image locations
         instance_dict['thumbnail_path'] = str(thumbnail_path)
         instance_dict['tissue_mask_path'] = str(tissue_mask_path)
         instance_dict['tissue_chunk_mask_path'] = str(tissue_chunk_mask_path)
         instance_dict['tile_data_path'] = str(final_outdir / filename_tiledf)
+
+        # Format instance attributes for JSON file
+        if 'wsi_src' in instance_dict.keys():
+            instance_dict['wsi_src'] = str(self.wsi_src)
+        if 'outdir' in instance_dict.keys():
+            instance_dict['outdir'] = str(self.outdir)
+        if 'tile_data' in instance_dict.keys():
+            del(instance_dict['tile_data'])
+
+        # Get key names for all image masks
+        mask_vars = [i for i in instance_dict.keys() if i.endswith('_mask')]
+        mask_vars = ['thumbnail'] + mask_vars
         
+        #Get slice dictionary to get all masks & thumbnail
+        mask_dir = {k:instance_dict[k] for k in mask_vars}
+
+        #save masks and thumbnail arrays as npz archive
+        arrays_path = final_outdir / ("%s___imgmask_arrays.npz" % self.wsi_id)
+        instance_dict['array_data_path'] = str(arrays_path)
+        np.savez_compressed( arrays_path ,**mask_dir)
+
+        #Remove from masks from instace dictionary
+        for aMask in mask_vars:
+            del(instance_dict[aMask])
+        
+        #Save to JSON file
         json_path = final_outdir / ("%s___WsiManagerData.json" % self.wsi_id)
+        instance_dict['WsiManager_data_path'] = str(json_path)
         with open(json_path, "w") as outfile:
             json.dump(instance_dict, outfile)
         
@@ -429,7 +447,7 @@ class WsiManager:
                 measures = pd.DataFrame(measures)
                 for i,props in measures.iterrows():
                     plt.text(props['centroid-1'], props['centroid-0'],int(props['label']),
-                        fontweight='bold',fontsize="medium",color="white")
+                        fontweight='bold',fontsize="medium",color="gainsboro")
             if export:
                 # plt.imsave(finalPath, self.tissue_chunk_mask, cmap=a_cmap, vmin=0)
                 plt.savefig(finalPath, bbox_inches='tight', pad_inches=0, format="png", dpi=600)
@@ -560,7 +578,6 @@ class WsiManager:
 
         return(finalPath)
 
-    #TODO Add save masks as npz archives
     #TODO export tiles
     #TODO create object from from directory
 
