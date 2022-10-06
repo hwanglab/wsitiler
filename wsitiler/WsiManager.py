@@ -50,7 +50,7 @@ class WsiManager:
     BACKGROUND_LABEL = -1
 
     #Constructor with Openslide object
-    def __init__(self,wsi_src: Path=None, wsi: openslide.OpenSlide=None, wsi_id: str=None, outdir: Path=None, mpt: str=PIXELS_PER_TILE, wsi_level: int=0, min_tissue: float=MIN_FOREGROUND_THRESHOLD, noise_size: int=NOISE_SIZE_MICRONS, segment_tissue: bool=False, normalization: List[str]=['no_norm']):
+    def __init__(self,wsi_src: Path=None, wsi: openslide.OpenSlide=None, wsi_id: str=None, outdir: Path=None, mpt: str=PIXELS_PER_TILE, wsi_level: int=0, min_tissue: float=MIN_FOREGROUND_THRESHOLD, noise_size: int=NOISE_SIZE_MICRONS, segment_tissue: bool=False, normalization: List[str]=['no_norm'], getEmpty: bool=False):
         """
         WsiManager constructor based on an OpenSlide object and additional parameters.
 
@@ -65,10 +65,15 @@ class WsiManager:
             noise_size (int): Maximum size (in microns) of forground regions to be considered noise & be removed. Default: [%d]
             segment_tissue (bool): Generate tissue chunk segmentation mask and assign labels to corresponding tiles. Default: [False]
             normalization (List[str]): List of normalization names to appy to during tiling (use  'no_norm' for no normalization). Default: [no_norm]
+            getEmpty (bool): Return an empty WsiManager object. Used for internal class methods. Default: [False]
 
         Output:
             new WSIManager object
         """ % (PIXELS_PER_TILE,MIN_FOREGROUND_THRESHOLD,NOISE_SIZE_MICRONS)
+
+        # Return empty object if requested
+        if getEmpty:
+            return(None)
 
         # Validate and set metadata parameters
         self.img_lvl = wsi_level
@@ -579,7 +584,67 @@ class WsiManager:
         return(finalPath)
 
     #TODO export tiles
-    #TODO create object from from directory
+
+    #### Set Class Methods ####
+    @classmethod
+    def fromdir(indir: Path=None):
+        '''Create a new WsiManager object from reading an exported WsiManager directory
+
+        Input:
+            indir (Path): File path to directory containing WsiManager data.
+        Output:
+            New WsiManager object based on data contained in given directory.
+        '''
+
+        #Find and validate output directory
+        if indir is None:
+            raise ValueError("No input directory has been supplied")
+        else:
+            if isinstance(indir,str):
+                indir = Path(indir)
+            elif not isinstance(indir,Path):
+                raise ValueError("Input path is not a Path or a string.")
+            
+        # format input file
+        indir = indir if indir.stem == "info" else indir / "info"
+
+        # Import data from JSON
+        jsonFileList = list(indir.glob("*___WsiManagerData.json"))
+
+        if len(jsonFileList) > 0:
+            with open(jsonFileList[0]) as json_file:
+                # Get data and prepare object
+                jsonData = json.load(json_file)
+                newObj = WsiManager(getEmpty=True)
+
+                #Save object metadata
+                newObj.wsi_id = jsonData['wsi_id']
+                newObj.wsi_src = Path(jsonData['wsi_src'])
+                newObj.outdir = Path(jsonData['outdir'])
+                newObj.normalization = jsonData['normalization']
+
+                # Save tile metaparameters
+                newObj.wsi_mpp = jsonData['wsi_mpp']
+                newObj.wsi_ppt_x = jsonData['wsi_ppt_x']
+                newObj.wsi_ppt_y = jsonData['wsi_ppt_y']
+                newObj.thumbnail_mpp = jsonData['thumbnail_mpp']
+                newObj.thumbnail_ratio = jsonData['thumbnail_ratio']
+                newObj.thumbnail_ppt_x = jsonData['thumbnail_ppt_x']
+                newObj.thumbnail_ppt_y = jsonData['thumbnail_ppt_y']
+
+                # Save tile data
+                newObj.tile_data = pd.read_csv(jsonData['tile_data_path'],sep='\t')
+
+                # Save thumbnail and maks
+                mask_npz = np.load(Path(jsonData['array_data_path']))
+                for key,ar in mask_npz.items():
+                    setattr(newObj,key,ar)
+
+        else:
+            raise ValueError("Input path is not a Path or a string.")
+        
+        return(newObj)
+
 
     #### Set properties ####
     @property
@@ -598,34 +663,8 @@ class WsiManager:
     def __str__(self):
         return f'WsiManager(ID:{self.wsi_id}; Shape: {self.shape}); Tissue Tiles: n={len(self.tile_data[ ~pd.isnull(self.tile_data.tilename) ])}'
 
+    # TODO: Check repr max length)
     # @property
     # def __repr__(self):
     #     return f'WsiManager(ID:{self.wsi_id}; Shape: {self.shape}); Tissue Tiles: n={len(self.tile_data[ ~pd.isnull(self.tile_data.tilename) ])}'
 
-
-    # #TODO finsh
-    # @classmethod
-    # def fromdir(self,reffile=''):
-    #     '''Create a new WsiManager object from reading an exported WsiManager directory'''
-    #     reffile = Path(reffile)
-    #     reffile_name = reffile.stem
-        
-    #     #Validate reffile input
-    #     if reffile.is_file() and reffile.suffix == 'tsv' and reffile_name.startswith('info___reference_'):
-    #         res = re.match(r'(\w+)___reference_wsi-tilesize_x-(\d+)-y-(\d+)_mask-tilesize_x-(\d+)-y-(\d+)_img-level_(\d+)',reffile_name)
-
-    #         values = res.groups()
-
-    #         self.wsi_id = values[1]
-    #         self.wsi_tilesize_x = values[2]
-    #         self.wsi_tilesize_y = values[3]
-    #         self.mask_tilesize_x = values[4]
-    #         self.mask_tilesize_y = values[5]
-    #         self.img_lvl = values[6]
-    #         self.tile_data = pd.read_csv(str(reffile),sep='\t')
-
-    #         self.index_dim = (max(self.tile_data.index_y), max(self.tile_data.index_x))
-    #         self.wsi_dim = (max(self.tile_data.wsi_y)+self.wsi_tilesize_y, max(self.tile_data.wsi_x)+self.wsi_tilesize_x)
-    #         self.mask_dim = (max(self.tile_data.mask_y)+self.mask_tilesize_y, max(self.tile_data.mask_x)+self.mask_tilesize_x)
-    #         self.fields = [ i for i in self.tile_data.columns if i not in STANDARD_FIELDS ]
-    #     return(self)
