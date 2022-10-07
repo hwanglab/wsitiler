@@ -398,6 +398,8 @@ class WsiManager:
         
         return(None)
 
+    #### Implement Core Functions ####
+
     def export_chunk_mask(self, outdir: Path=None, show: bool=False, export: bool=True, labels=False):
         """
         Exports and/or displays the tissue_chunk_mask as an image from a WsiManager object, if available.
@@ -585,6 +587,21 @@ class WsiManager:
 
     #TODO export tiles
 
+    # Override string representation function
+    def __str__(self):
+        return f'WsiManager(ID:{self.wsi_id}; Shape: {self.shape}; Tissue Tiles: n={len(self.tile_data[ ~pd.isnull(self.tile_data.tilename) ])})'
+
+    # Override class representation function
+    def __repr__(self):
+        repr_str= f"WsiManager '{self.wsi_id}': {len(self.tile_data[ ~pd.isnull(self.tile_data.tilename) ])}{self.shape}"
+        if len(repr_str) > 38:
+            repr_str= f"WsiManager '{self.wsi_id}'"
+        if len(repr_str) > 38:
+            repr_str= repr_str[:-4]+"...'"
+        repr_str = "<"+repr_str+">"
+
+        return(repr_str)
+
     #### Set Class Methods ####
     @classmethod
     def fromdir(indir: Path=None):
@@ -658,13 +675,3 @@ class WsiManager:
         y_tiles = max(self.tile_data["index_y"])
         x_tiles= max(self.tile_data["index_x"])
         return( [y_tiles,x_tiles] )
-
-    @property
-    def __str__(self):
-        return f'WsiManager(ID:{self.wsi_id}; Shape: {self.shape}); Tissue Tiles: n={len(self.tile_data[ ~pd.isnull(self.tile_data.tilename) ])}'
-
-    # TODO: Check repr max length)
-    # @property
-    # def __repr__(self):
-    #     return f'WsiManager(ID:{self.wsi_id}; Shape: {self.shape}); Tissue Tiles: n={len(self.tile_data[ ~pd.isnull(self.tile_data.tilename) ])}'
-
