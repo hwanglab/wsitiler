@@ -20,7 +20,7 @@ from wsitiler.normalizer.Normalizer import Normalizer
 
 class MacenkoNormalizer(Normalizer):
     """
-    Stain normalization object implementing Macenko stain normalization.
+    Stain normalization class implementing Macenko stain normalization.
     This class is inherited from wsitiler.Normalizer
     """
 

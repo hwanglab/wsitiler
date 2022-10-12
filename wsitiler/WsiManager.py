@@ -42,7 +42,10 @@ NOISE_SIZE_MICRONS = 256
 MIN_FOREGROUND_THRESHOLD = 0.10
 
 class WsiManager:
-    ''
+    """
+    Class implementing a handler for processing Whole-Slide Image files.
+    WsiManager allows efficient tile processing and file export of WSIs.
+    """
 
     # SUPPORTED_WSI_FORMATS defines the WSI formats supported by Openslide.
     SUPPORTED_WSI_FORMATS = [".svs",".ndpi",".vms",".vmu",".scn",".mrxs",".tiff",".svslide",".tif",".bif"]
