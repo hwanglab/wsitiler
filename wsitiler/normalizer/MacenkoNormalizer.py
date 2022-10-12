@@ -7,6 +7,10 @@ Original macenko normalization code from:
 https://github.com/schaugf/HEnorm_python
 Modified by Isaiah Pressman (@IsaiahPressman)
 
+Reference:
+    A method for normalizing histology slides for quantitative analysis. M.
+    Macenko et al., ISBI 2009
+
 Class Implementation: Jean R Clemenceau
 Date Created: 01/11/2021
 """
