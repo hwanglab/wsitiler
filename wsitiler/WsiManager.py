@@ -32,7 +32,7 @@ from skimage.filters import threshold_otsu
 from skimage.morphology import remove_small_objects, opening,closing, square
 
 from wsitiler.wsi_utils import describe_wsi_levels
-# import wsitiler.normalizer as norm
+import wsitiler.normalizer as norm
 
 # PIXELS_PER_TILE defines the default tile edge length m used when breaking WSIs into smaller images (m x m)
 PIXELS_PER_TILE = "512px"
@@ -77,11 +77,10 @@ class WsiManager:
 
         # Validate and set metadata parameters
         self.img_lvl = wsi_level
-        if all([isinstance(i, str) for i in normalization]):
-            #TODO check all normalization methods are valid
+        if all([isinstance(i, str) for i in normalization]) and all([i in norm.NORMALIZER_CHOICES for i in normalization]):
             self.normalization = normalization
         else:
-            raise ValueError('Requested normalization values are not in list of string format')
+            raise ValueError('At least one requested normalization value is not a valid Normalizer option.')
 
         #Validate OpenSlide WSI object
         if wsi is not None and not isinstance(wsi,openslide.OpenSlide):
@@ -157,6 +156,7 @@ class WsiManager:
         thumbnail_og = wsi.get_thumbnail(size=(wsi.level_dimensions[-1][0], wsi.level_dimensions[-1][1]))
         self.thumbnail = np.array(thumbnail_og)
         thumbnail_gray = (rgb2gray(self.thumbnail) * 255).astype(np.uint8)
+        wsi.close()
 
         #Save micros per pixel in thumbnail:
         self.thumbnail_mpp = float(wsi_params["Resolution"].iloc[-1].split("mpp")[0])
@@ -267,6 +267,8 @@ class WsiManager:
         self.tile_data.loc[self.tile_data['tissue_ratio'] < min_tissue, "tilename"] = None
 
         return(None)
+    
+    #### Implement Core Functions ####
 
     def segment_tissue(self):
         """
@@ -397,8 +399,6 @@ class WsiManager:
             json.dump(instance_dict, outfile)
         
         return(None)
-
-    #### Implement Core Functions ####
 
     def export_chunk_mask(self, outdir: Path=None, show: bool=False, export: bool=True, labels=False):
         """
@@ -585,7 +585,121 @@ class WsiManager:
 
         return(finalPath)
 
-    #TODO export tiles
+    def export_tiles(self, filetype = "png", tile_idx_list: List[str]=[], outdir: Path=None, normalizer=None, ref_img: Path=None, wsi_image: openslide.OpenSlide=None):
+        """
+        Import a WSI, split in to tiles, normalize color if requested, and save individual tile files to output directory.
+
+        Input:
+            self (WsiManager): WsiManager instance for exporting its tiles
+            filetype (str): Format for exporting tile files. Options: ['png','npy']. Default: [png].
+            tile_idx_list (List[str]): List of indeces from tile_data DataFrame that will be exported. Default: export all non-background tiles.
+            outdir (Path): File path to directory that contains collection of WsiManager output directories. Optional if WsiManager outdir field has been set.
+            normalizer (str or Normalizer): Valid name or Normalizer object to be used for tile stain normalization. Default: [None].
+            ref_img (Path): Path to reference image for stain normalization. Default: Default image reference from wsitiler.normalizer.
+            wsi_image (Openslide): OpenSlide object used to extract image tiles (used for multiprocessing). Default: [None].
+
+        Output:
+            Funtion exports tiles as files to output directory.
+        """
+        
+        # Validate exporting file type
+        if filetype not in ['png','npy']:
+            raise ValueError("Tile export format not supported.")
+
+        # Validate normalizer
+        if normalizer is None or isinstance(normalizer, str):
+            # if normalizer not given, use object's first requested method as default
+            if normalizer is None and len(self.normalization) >0:
+                normalizer = norm.setup_normalizer(self.normalization[0], ref_img)
+            # if normalizer method is given but not valid, raise exception
+            elif normalizer is not None and normalizer not in norm.NORMALIZER_CHOICES:
+                raise ValueError("Supplpied normalizer choice name is not valid.")
+            # if given normalizer method is valid, generate Normalizer object
+            else:
+                normalizer = norm.setup_normalizer(normalizer, ref_img)
+        else:
+            # if normalizer is Normalizer object, ensure method is fit to target
+            if isinstance(normalizer, norm.Normalizer):
+                if not normalizer.is_fit:
+                    if ref_img is None:
+                        ref_img = norm.get_target_img()
+                    elif not ref_img.is_file():
+                        raise ValueError ("Supplied reference image path is not a file or does not exist.")
+                    
+                    #Fit normalizer if not fit
+                    normalizer.fit(ref_img)
+            else:
+                raise ValueError("Supplied normalizer is not a Normalizer object")
+
+        # Validate output directory
+        if outdir is None and self.outdir is None:
+            raise ValueError("Output path has not been given.")
+        
+        # Validate and set output to given value
+        if outdir is not None:
+            if isinstance(outdir,str):
+                outdir = Path(outdir)
+            elif not isinstance(outdir,Path):
+                raise ValueError("Output path is not a Path or a string.")
+
+            #if output directory has correct format, save it.
+            if outdir.suffix == "":
+                if self.outdir is None:
+                    self.outdir = outdir
+            else:
+                raise ValueError("Output path does not have directory format.")
+        
+        # Make final tile output directory path
+        final_outdir = self.outdir / self.wsi_id / "tiles" / normalizer.method
+
+        # Ensure output directory exists
+        if not final_outdir.is_dir():
+            final_outdir.mkdir(parents=True)
+
+        # Validate list of tile indices
+        if len(tile_idx_list) == 0:
+            # If no subset givem, export all foreground tiles
+            exported_tiles = self.tile_data[ ~pd.isnull(self.tile_data.tilename) ]
+        else:
+            exported_tiles = self.tile_data.iloc[tile_idx_list]
+
+        # Open and prepare input WSI if not given
+        wsi_given = True
+        if wsi_image is None:
+            wsi_given = False
+            wsi_image = openslide.open_slide(str(self.wsi_src))
+
+        # Process and export each tile sequentially
+        for index, aTile in exported_tiles.iterrows():
+            # index=0;aTile=tile_data.iloc[index]#TODO:remove
+            # plt.imshow(aTile_img);plt.show(block=False);#TODO: remove
+
+            # Extract tile region
+            aTile_img = wsi_image.read_region((aTile["wsi_x"], aTile["wsi_y"]), level=0,
+                                    size=(self.wsi_ppt_x, self.wsi_ppt_y))
+
+            #Convert to RGB array
+            aTile_img = np.array( aTile_img.convert('RGB') )
+
+            # Normalize if required
+            if normalizer != None:
+                aTile_img = normalizer.transform(aTile_img)
+
+            # Save tile image to file
+            if aTile['tilename'] is not np.NaN:
+                if filetype == 'png':
+                    plt.imsave(final_outdir / (aTile['tilename']+"."+filetype), aTile_img)
+                elif filetype == 'npy':
+                    np.save(file=final_outdir / (aTile['tilename']+"."+filetype), arr=aTile_img)
+                else:
+                    raise ValueError("Tile export format not supported. Tile not Exported: %s" % aTile['filename'])
+
+        if not wsi_given:
+            wsi_image.close()
+
+        return
+    
+    # def export_tiles_multiprocess():
 
     # Override string representation function
     def __str__(self):
@@ -604,7 +718,7 @@ class WsiManager:
 
     #### Set Class Methods ####
     @classmethod
-    def fromdir(indir: Path=None):
+    def fromdir(cls,indir: Path=None):
         '''Create a new WsiManager object from reading an exported WsiManager directory
 
         Input:
