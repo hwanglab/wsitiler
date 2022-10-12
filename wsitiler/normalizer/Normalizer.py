@@ -56,3 +56,17 @@ class Normalizer:
 
     def __repr__(self):
         return f'wsitiler.Normalizer({self.method}: {"Fit" if self.is_fit else "Not Fit"})'
+
+    def __eq__(self, obj):
+        equals = False
+        if obj is None and self.method == "no_norm":
+            equals = True
+        elif isinstance(obj, Normalizer) and obj.__class__.__name__ == self.__class__.__name__ and obj.is_fit == self.is_fit:
+            #TODO: check if target image is same
+            equals = True
+        else:
+            equals = False
+        return equals
+    
+    def __ne__(self, obj):
+        return not self == obj
