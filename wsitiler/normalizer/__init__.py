@@ -10,6 +10,7 @@ from PIL import Image
 from pathlib import Path
 import numpy as np
 import pkg_resources
+from wsitiler.normalizer.Normalizer import Normalizer
 from wsitiler.normalizer.MacenkoNormalizer import MacenkoNormalizer
 
 NORMALIZER_CHOICES = ["no_norm","macenko"]
@@ -29,7 +30,7 @@ def get_target_img():
     target_img = np.array(target_img)
     return target_img
 
-def setup_normalizer(normalizer_choice, ref_img_path=None):
+def setup_normalizer(normalizer_choice, ref_img_path: Path=None):
     """
     Initialize a WSI normalizer object using the method of choice.
 
@@ -47,7 +48,7 @@ def setup_normalizer(normalizer_choice, ref_img_path=None):
     if ref_img_path is None or ref_img_path == "None":
         ref_img = get_target_img()
     else:
-        ref_img_path = Path(ref_img_path)
+        ref_img_path = ref_img_path if isinstance(ref_img_path, Path) else Path(ref_img_path)
         if( ref_img_path.is_file() ):
             ref_img = np.array(Image.open(ref_img_path).convert('RGB'))
         else:
