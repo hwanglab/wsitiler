@@ -55,7 +55,9 @@ def setup_normalizer(normalizer_choice, ref_img_path: Path=None):
             raise ValueError("Target image does not exist")
 
     # Initialize normalizer & setup reference image if required
-    if normalizer_choice is not None and normalizer_choice != "None" and normalizer_choice != "no_norm":
+    if normalizer_choice is None or normalizer_choice == "None" or normalizer_choice == "no_norm":
+        normalizer = Normalizer()
+    else:
         if normalizer_choice in NORMALIZER_CHOICES:
             if normalizer_choice == "macenko":
                 normalizer = MacenkoNormalizer()
@@ -64,8 +66,8 @@ def setup_normalizer(normalizer_choice, ref_img_path: Path=None):
             # elif normalizer_choice == "vahadane":
             #     normalizer = VahadaneNormalizer()
             
-            else:
-                raise ValueError("Normalizer choice not supported")
+        else:
+            raise ValueError("Normalizer choice not supported")
 
         normalizer.fit(ref_img)
 
