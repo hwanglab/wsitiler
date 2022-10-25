@@ -9,9 +9,6 @@ Date Created: 18/09/2022
 """
 
 import openslide
-import argparse
-import os
-import math
 import time
 import json
 import numpy as np
@@ -19,7 +16,7 @@ import pandas as pd
 import multiprocessing as mp
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-import traceback
+import logging as log
 
 from PIL import Image
 from typing import List
@@ -543,6 +540,8 @@ class WsiManager:
             If 'export' is enabled, returns filepath to image, 'None' otherwise.
             Note: Places image in directory: '<outdir>/<wsi_id>/info/' unless a 'outdir' is given.
         """
+        log.info("Exporting Binary Mask -- ID: %s, Mask: %s" % (self.wsi_id, maskName)) 
+
         finalPath = None
         if hasattr(self,maskName):
 
@@ -604,10 +603,12 @@ class WsiManager:
         Output:
             Funtion exports tiles as files to output directory.
         """
+        log.info("Exporting Tiles -- ID: %s" % self.wsi_id) 
         
         # Validate exporting file type
         if filetype not in ['png','npy']:
             raise ValueError("Tile export format not supported.")
+        log.debug("Output Format: %s" % str(filetype))
 
         # Validate normalizer
         if normalizer is None or isinstance(normalizer, str):
@@ -621,9 +622,9 @@ class WsiManager:
             else:
                 normalizer = norm.setup_normalizer(normalizer, ref_img)
         else:
-            # if normalizer is Normalizer object, ensure method is fit to target
+            # if normalizer is acctive Normalizer object, ensure method is fit to target
             if isinstance(normalizer, norm.Normalizer):
-                if not normalizer.is_fit:
+                if not normalizer.is_fit and normalizer != None:
                     if ref_img is None:
                         ref_img = norm.get_target_img()
                     elif not ref_img.is_file():
@@ -633,6 +634,8 @@ class WsiManager:
                     normalizer.fit(ref_img)
             else:
                 raise ValueError("Supplied normalizer is not a Normalizer object")
+        log.debug("Normalizer: %s" % normalizer)
+        
 
         # Validate output directory
         if outdir is None and self.outdir is None:
@@ -654,28 +657,35 @@ class WsiManager:
         
         # Make final tile output directory path
         final_outdir = self.outdir / self.wsi_id / "tiles" / normalizer.method
+        log.debug("Final output directory: %s" % str(final_outdir))
 
         # Ensure output directory exists
         if not final_outdir.is_dir():
             final_outdir.mkdir(parents=True)
 
         # Validate list of tile indices
-        if len(tile_idx_list) == 0:
-            # If no subset givem, export all foreground tiles
+        if len(tile_idx_list) < 1:
+            # If no subset given, export all foreground tiles
             exported_tiles = self.tile_data[ ~pd.isnull(self.tile_data.tilename) ]
         else:
             exported_tiles = self.tile_data.iloc[tile_idx_list]
-
+        log.debug("Tiles for exporting: %d" % len(exported_tiles))
+        
         # Open and prepare input WSI if not given
         wsi_given = True
         if wsi_image is None:
             wsi_given = False
             wsi_image = openslide.open_slide(str(self.wsi_src))
+            log.debug("Default WSI object: %s" % str(wsi_image))
+        elif isinstance(wsi_image, Path):
+            log.debug("Supplied WSI path: %s" % str(wsi_image))
+            wsi_image = openslide.open_slide(str(wsi_image))
+        else:
+            log.debug("Supplied WSI object: %s" % str(wsi_image))
 
         # Process and export each tile sequentially
+        tiling_start_time = time.time()
         for index, aTile in exported_tiles.iterrows():
-            # index=0;aTile=tile_data.iloc[index]#TODO:remove
-            # plt.imshow(aTile_img);plt.show(block=False);#TODO: remove
 
             # Extract tile region
             aTile_img = wsi_image.read_region((aTile["wsi_x"], aTile["wsi_y"]), level=0,
@@ -689,20 +699,130 @@ class WsiManager:
                 aTile_img = normalizer.transform(aTile_img)
 
             # Save tile image to file
-            if aTile['tilename'] is not np.NaN:
+            if aTile['tilename'] is not np.NaN and aTile['tilename'] is not None:
+                filename = (aTile['tilename']+"."+filetype)
                 if filetype == 'png':
-                    plt.imsave(final_outdir / (aTile['tilename']+"."+filetype), aTile_img)
+                    plt.imsave(final_outdir / filename, aTile_img)
                 elif filetype == 'npy':
-                    np.save(file=final_outdir / (aTile['tilename']+"."+filetype), arr=aTile_img)
+                    np.save(file=final_outdir / filename, arr=aTile_img)
                 else:
                     raise ValueError("Tile export format not supported. Tile not Exported: %s" % aTile['filename'])
+                log.debug("Exporting tile #%d: %s" % (index,filename) )
+            else:
+                log.debug("Tile filename unavailable (#%d)" % index )
+            tiling_end_time = time.time()
+            log.debug("Tile Export Time: %f" % (tiling_end_time-tiling_start_time))
+            
 
         if not wsi_given:
             wsi_image.close()
 
         return
     
-    # def export_tiles_multiprocess():
+    def export_tiles_multiprocess(self, filetype = "png", tile_idx_list: List[str]=[], outdir: Path=None, normalizers: List[str]=None, ref_img: Path=None,  cores: int=1):
+        """
+        Import a WSI, split in to tiles, normalize color if requested, and save individual tile files to output directory.
+
+        Input:
+            self (WsiManager): WsiManager instance that will be exporting tiles
+            filetype (str): Format for exporting tile files. Options: ['png','npy']. Default: [png].
+            tile_idx_list (List[str]): List of indeces from tile_data DataFrame that will be exported. Default: export all non-background tiles.
+            outdir (Path): File path to directory that contains collection of WsiManager output directories. Optional if WsiManager outdir field has been set.
+            normalizers (list of str): List of valid Normalizer method names to be used for tile stain normalization. Default: [instance's peselected normalizers].
+            ref_img (Path): Path to reference image for stain normalization. Default: Default image reference from wsitiler.normalizer.
+            cores (int): number of cores used in multiprocessing. Default: [1].
+
+        Output:
+            Funtion exports tiles as files to output directory.
+        """
+        log.info("Exporting Tiles Multiprocess -- ID: %s, cores: %d" % (self.wsi_id, cores)) 
+         
+         # Validate exporting file type
+        if filetype not in ['png','npy']:
+            raise ValueError("Tile export format not supported.")
+        log.debug("Output Format: %s" % str(filetype))
+        
+        # Validate cores
+        if cores < 1:
+            raise ValueError("Requested core count is too low. Must request at least 1 core.")
+        elif cores > mp.cpu_count():
+            raise ValueError("Requested core count is too High. You only  have %s cores available." % mp.cpu_count())
+
+        # Validate list of tile indices
+        if len(tile_idx_list) < 1:
+            # If no subset given, export all foreground tiles
+            exported_tiles = self.tile_data[ ~pd.isnull(self.tile_data.tilename) ].copy()
+        else:
+            exported_tiles = self.tile_data.iloc[tile_idx_list].copy()
+        
+        # Validate normalizer
+        if normalizers is None:
+            normalizers = self.normalization
+        elif not isinstance(normalizers, list):
+            raise ValueError("normalizers is not a list")
+        elif len(normalizers) < 1:
+            raise ValueError("Empty list of normalizers was supplied")
+        log.debug("Requested normalizers: %s" % ", ".join(normalizers) )
+
+        # Validate and set output to given value
+        if outdir is not None:
+            if isinstance(outdir,str):
+                outdir = Path(outdir)
+            elif not isinstance(outdir,Path):
+                raise ValueError("Output path is not a Path or a string.")
+        elif self.outdir is not None:
+            outdir = self.outdir
+        else:
+            raise ValueError("Output path has not been given.")
+        log.debug("Main output directory: %s" % str(outdir))
+
+        # Split list of tiles for multiprocessing
+        if cores == 1:
+            core_group = 0
+        else:
+            core_group = np.repeat( range(0,cores-1), np.floor(len(exported_tiles) / (cores-1)) )
+            core_group = np.append(core_group, np.repeat(cores, (len(exported_tiles)-len(core_group))) )
+        
+        exported_tiles['core_group'] = core_group
+        log.debug("Tiles for exporting: %d" % len(exported_tiles))
+        
+        # Open object's WSI as OpenSlide object
+        the_wsi = openslide.open_slide(str(self.wsi_src))
+
+        #Start exporting iterating over normalization methods
+        for aNormMethod in normalizers:
+
+            #Prepare normalizer object
+            if aNormMethod not in norm.NORMALIZER_CHOICES:
+                log.warn("Invalid normalizer option: %s. Skipping tile export." % aNormMethod) 
+                continue
+            aNormalizer = norm.setup_normalizer(aNormMethod,ref_img)
+            log.debug("Processing tiles with '%s' normalization" % aNormalizer.method )
+
+            # Process tiles in parallel        
+            pool = mp.Pool(cores)
+            async_start_time = time.time()
+
+            for aCoreGroup in np.unique(core_group):
+                aTileList = list(exported_tiles.index[exported_tiles.core_group == aCoreGroup])
+                log.debug("Exporting %d tiles from group #%d" % (len(aTileList),aCoreGroup) )
+
+                pool.apply_async(func=call_export_tiles,kwds={
+                    'obj': self,
+                    'filetype': filetype,
+                    'tile_idx_list': aTileList,
+                    'outdir': outdir,
+                    'normalizer': aNormalizer
+                })
+        
+            pool.close()
+            pool.join()
+            pool.terminate()
+            async_end_time = time.time()
+            log.debug("%s Total Tile Export Time: %f" % (aNormalizer.method, async_end_time-async_start_time))
+        
+        the_wsi.close()
+        return
 
     # Override string representation function
     def __str__(self):
@@ -792,3 +912,8 @@ class WsiManager:
         y_tiles = max(self.tile_data["index_y"])
         x_tiles= max(self.tile_data["index_x"])
         return( [y_tiles,x_tiles] )
+
+###Unbound callable functions for multiprocessing
+def call_export_tiles(obj, filetype = "png", tile_idx_list: List[str]=[], outdir: Path=None, normalizer=None, ref_img: Path=None, wsi_image: openslide.OpenSlide=None):
+    obj.export_tiles(filetype, tile_idx_list, outdir, normalizer, ref_img, wsi_image)
+    return
