@@ -82,7 +82,7 @@ class WsiManager:
             return(None)
 
         # Validate and set metadata parameters
-        self.img_lvl = wsi_level
+        self.img_lvl = int(wsi_level)
         if all([isinstance(i, str) for i in normalization]) and all([i in norm.NORMALIZER_CHOICES for i in normalization]):
             self.normalization = normalization
         else:
@@ -369,11 +369,11 @@ class WsiManager:
         self.tile_data.to_csv(final_outdir / filename_tiledf, sep="\t", line_terminator="\n", index=False)
 
         # Export thumbnail masks/images #TODO finish 
-        thumbnail_path = self.export_thumbnail(outdir= final_outdir, export=True)
-        tissue_mask_path = self.export_bin_mask(outdir= final_outdir, export=True)
-        tissue_chunk_mask_path = self.export_chunk_mask(outdir= final_outdir, export=True)
-        thumbnail_tiles_path = self.export_thumbnail(outdir= final_outdir, export=True, showTiles=True)
-        tissue_chunk_mask_labels_path = self.export_chunk_mask(outdir= final_outdir, export=True, labels=True)
+        thumbnail_path = self.export_thumbnail(outdir= final_outdir, export=True, show=False)
+        tissue_mask_path = self.export_bin_mask(outdir= final_outdir, export=True, show=False)
+        tissue_chunk_mask_path = self.export_chunk_mask(outdir= final_outdir, export=True, show=False)
+        thumbnail_tiles_path = self.export_thumbnail(outdir= final_outdir, export=True, showTiles=True, show=False)
+        tissue_chunk_mask_labels_path = self.export_chunk_mask(outdir= final_outdir, export=True, labels=True, show=False)
 
         # Prepare instance attributes for JSON file
         instance_dict = self.__dict__.copy()
@@ -411,6 +411,8 @@ class WsiManager:
         #Save to JSON file
         json_path = final_outdir / ("%s___WsiManagerData.json" % self.wsi_id)
         instance_dict['WsiManager_data_path'] = str(json_path)
+        log.debug("Exporting instance directory to Json: %s" % ", ".join(instance_dict.keys()))
+
         with open(json_path, "w") as outfile:
             json.dump(instance_dict, outfile)
         
@@ -624,7 +626,7 @@ class WsiManager:
             Funtion exports tiles as files to output directory.
         """
         tile_cnt=len(tile_idx_list)
-        tile_cnt_str = str(tile_cnt) if tile_cnt>0 else "All",
+        tile_cnt_str = str(tile_cnt) if tile_cnt>0 else "All"
         export_start_time = time.time()
         log.info("Exporting %s Tiles -- ID: %s" % (tile_cnt_str, self.wsi_id)) 
         
@@ -760,9 +762,9 @@ class WsiManager:
             Funtion exports tiles as files to output directory.
         """
         tile_cnt=len(tile_idx_list)
-        tile_cnt_str = str(tile_cnt) if tile_cnt>0 else "All",
+        tile_cnt_str = str(tile_cnt) if tile_cnt>0 else "All"
         export_start_time = time.time()
-        log.info("Exporting %s Tiles (multiprocess) -- ID: %s, cores: %d" % (self.wsi_id, cores)) 
+        log.info("Exporting %s Tiles (multiprocess) -- ID: %s, cores: %d" % (tile_cnt_str,self.wsi_id, cores)) 
          
          # Validate exporting file type
         if filetype not in ['png','npy']:
