@@ -34,13 +34,6 @@ import wsitiler.normalizer as norm
 from openslide import OpenSlideError, OpenSlideUnsupportedFormatError
 from PIL import UnidentifiedImageError
 
-# PIXELS_PER_TILE defines the default tile edge length m used when breaking WSIs into smaller images (m x m)
-PIXELS_PER_TILE = "512px"
-# NOISE_SIZE_MICRONS defines default maximum size (in microns) for an artifact to be considered as noise in the WSI tissue mask.
-NOISE_SIZE_MICRONS = 256
-# MIN_FOREGROUND_THRESHOLD defines default minimum tissue/background ratio to classify a tile as foreground.
-MIN_FOREGROUND_THRESHOLD = 0.10
-
 class WsiManager:
     """
     Class implementing a handler for processing Whole-Slide Image files.
@@ -49,6 +42,14 @@ class WsiManager:
 
     # SUPPORTED_WSI_FORMATS defines the WSI formats supported by Openslide.
     SUPPORTED_WSI_FORMATS = [".svs",".ndpi",".vms",".vmu",".scn",".mrxs",".tiff",".svslide",".tif",".bif"]
+    # SUPPORTED_TILE_EXPORT_FORMATS defines the file formats supported for exporting tiles
+    SUPPORTED_TILE_EXPORT_FORMATS = ['png','npy']
+    # PIXELS_PER_TILE defines the default tile edge length m used when breaking WSIs into smaller images (m x m)
+    PIXELS_PER_TILE = "512px"
+    # NOISE_SIZE_MICRONS defines default maximum size (in microns) for an artifact to be considered as noise in the WSI tissue mask.
+    NOISE_SIZE_MICRONS = 256
+    # MIN_FOREGROUND_THRESHOLD defines default minimum tissue/background ratio to classify a tile as foreground.
+    MIN_FOREGROUND_THRESHOLD = 0.10
     # Background label for segmented tissue
     BACKGROUND_LABEL = -1
 
