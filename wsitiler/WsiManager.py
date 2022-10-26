@@ -22,7 +22,7 @@ from PIL import Image
 from typing import List
 from pathlib import Path
 from math import ceil, floor
-from skimage import measure, transform
+from skimage import measure
 from scipy import ndimage as ndi
 from skimage.color import rgb2gray
 from skimage.filters import threshold_otsu
@@ -30,6 +30,9 @@ from skimage.morphology import remove_small_objects, opening,closing, square
 
 from wsitiler.wsi_utils import describe_wsi_levels
 import wsitiler.normalizer as norm
+
+from openslide import OpenSlideError, OpenSlideUnsupportedFormatError
+from PIL import UnidentifiedImageError
 
 # PIXELS_PER_TILE defines the default tile edge length m used when breaking WSIs into smaller images (m x m)
 PIXELS_PER_TILE = "512px"
@@ -70,6 +73,8 @@ class WsiManager:
         Output:
             new WSIManager object
         """ % (PIXELS_PER_TILE,MIN_FOREGROUND_THRESHOLD,NOISE_SIZE_MICRONS)
+        log.info("Generating new WsiManager Instance -- ID: %s, WSI: %s" % (wsi_id, wsi_src))
+        constructor_start_time = time.time()
 
         # Return empty object if requested
         if getEmpty:
@@ -101,7 +106,12 @@ class WsiManager:
                 if wsi_src.suffix in WsiManager.SUPPORTED_WSI_FORMATS:
                     self.wsi_src = wsi_src
                     if wsi is None:
-                        wsi = openslide.OpenSlide(str(wsi_src))
+                        #Open WSI
+                        try:
+                            wsi = openslide.OpenSlide(str(wsi_src))
+                        except (OpenSlideError,OpenSlideUnsupportedFormatError,UnidentifiedImageError) as e:
+                            log.warning("%s - WARNING: WSI could not be read. Skipping: %s\n" % (wsi_id, str(wsi_src)))
+                            raise ValueError("WSI could not be opened.")
                 else:
                     raise ValueError("File type of given WSI source is not supported.")
             else:
@@ -213,7 +223,7 @@ class WsiManager:
             for l in filtered_chunks:
                 self.tissue_chunk_mask[self.tissue_chunk_mask == l] = WsiManager.BACKGROUND_LABEL
 
-        # Populate tile reference table###########
+        # Populate tile reference table
         rowlist = []
         for x in range(len(wsi_tiles_x)):
             for y in range(len(wsi_tiles_y)):
@@ -266,6 +276,8 @@ class WsiManager:
         # Remove filenames for empty tiles
         self.tile_data.loc[self.tile_data['tissue_ratio'] < min_tissue, "tilename"] = None
 
+        log.debug("%s - WsiManager instantiation time: %f" % (self.wsi_id, time.time() - constructor_start_time) )
+
         return(None)
     
     #### Implement Core Functions ####
@@ -274,6 +286,7 @@ class WsiManager:
         """
         Segments tissue mask from the given WsiManager object to find individual tissue regions. Assigns labels to tiles and generates labeled mask.
         """
+        log.info("Segmenting Tissue Chunks -- ID: %s" % (self.wsi_id))
 
         # Get labels for all chunks
         self.tissue_chunk_mask = ndi.label(self.tissue_mask)[0]
@@ -321,6 +334,8 @@ class WsiManager:
         Output:
             Creates output directory '<outdir>/<wsi_id>/info/'. Generates JSON file for metadata, TSV file for tile data, and exports thumbnail and masks as PNGs.
         """
+        log.info("Exporting WsiManager instance's metadata -- ID: %s, Output Directory: %s" % (self.wsi_id, outdir))
+        export_start_time = time.time()
 
         #Validate output directory
         if outdir is None and self.outdir is None:
@@ -398,6 +413,8 @@ class WsiManager:
         with open(json_path, "w") as outfile:
             json.dump(instance_dict, outfile)
         
+        log.debug("%s - Metadata export time: %f" % (self.wsi_id, time.time() - export_start_time) )
+
         return(None)
 
     def export_chunk_mask(self, outdir: Path=None, show: bool=False, export: bool=True, labels=False):
@@ -413,6 +430,7 @@ class WsiManager:
             If 'export' is enabled, returns filepath to image, 'None' otherwise.
             Note: Places image in directory: '<outdir>/<wsi_id>/info/' unless a 'outdir' is given.
         """
+        log.info("Exporting Segmented Tissue Mask%s -- ID: %s" % (" and Labels" if labels else "", self.wsi_id))
         finalPath = None
         if hasattr(self,"tissue_chunk_mask"):
 
@@ -476,6 +494,7 @@ class WsiManager:
             If 'export' is enabled, returns filepath to image, 'None' otherwise.
             Note: Places image in directory: '<outdir>/<wsi_id>/info/' unless a 'outdir' is given.
         """
+        log.info("Exporting WSI Thumbnail%s -- ID: %s" % (" and Tiles" if showTiles else "", self.wsi_id))
         finalPath = None
         if hasattr(self,"thumbnail"):
 
@@ -540,7 +559,7 @@ class WsiManager:
             If 'export' is enabled, returns filepath to image, 'None' otherwise.
             Note: Places image in directory: '<outdir>/<wsi_id>/info/' unless a 'outdir' is given.
         """
-        log.info("Exporting Binary Mask -- ID: %s, Mask: %s" % (self.wsi_id, maskName)) 
+        log.info("Exporting Binary Mask -- ID: %s, Mask: %s" % (self.wsi_id, maskName))
 
         finalPath = None
         if hasattr(self,maskName):
@@ -603,7 +622,10 @@ class WsiManager:
         Output:
             Funtion exports tiles as files to output directory.
         """
-        log.info("Exporting Tiles -- ID: %s" % self.wsi_id) 
+        tile_cnt=len(tile_idx_list)
+        tile_cnt_str = str(tile_cnt) if tile_cnt>0 else "All",
+        export_start_time = time.time()
+        log.info("Exporting %s Tiles -- ID: %s" % (tile_cnt_str, self.wsi_id)) 
         
         # Validate exporting file type
         if filetype not in ['png','npy']:
@@ -636,7 +658,6 @@ class WsiManager:
                 raise ValueError("Supplied normalizer is not a Normalizer object")
         log.debug("Normalizer: %s" % normalizer)
         
-
         # Validate output directory
         if outdir is None and self.outdir is None:
             raise ValueError("Output path has not been given.")
@@ -717,6 +738,8 @@ class WsiManager:
         if not wsi_given:
             wsi_image.close()
 
+        log.debug("%s - %s tile export time: %f" % (self.wsi_id, tile_cnt_str, time.time() - export_start_time) )
+
         return
     
     def export_tiles_multiprocess(self, filetype = "png", tile_idx_list: List[str]=[], outdir: Path=None, normalizers: List[str]=None, ref_img: Path=None,  cores: int=1):
@@ -735,7 +758,10 @@ class WsiManager:
         Output:
             Funtion exports tiles as files to output directory.
         """
-        log.info("Exporting Tiles Multiprocess -- ID: %s, cores: %d" % (self.wsi_id, cores)) 
+        tile_cnt=len(tile_idx_list)
+        tile_cnt_str = str(tile_cnt) if tile_cnt>0 else "All",
+        export_start_time = time.time()
+        log.info("Exporting %s Tiles (multiprocess) -- ID: %s, cores: %d" % (self.wsi_id, cores)) 
          
          # Validate exporting file type
         if filetype not in ['png','npy']:
@@ -803,9 +829,10 @@ class WsiManager:
             pool = mp.Pool(cores)
             async_start_time = time.time()
 
+            # Export tiles in parallel
             for aCoreGroup in np.unique(core_group):
                 aTileList = list(exported_tiles.index[exported_tiles.core_group == aCoreGroup])
-                log.debug("Exporting %d tiles from group #%d" % (len(aTileList),aCoreGroup) )
+                log.debug("Exporting %d tiles (%s) from group #%d" % (len(aTileList),aNormalizer.method,aCoreGroup) )
 
                 pool.apply_async(func=call_export_tiles,kwds={
                     'obj': self,
@@ -819,9 +846,11 @@ class WsiManager:
             pool.join()
             pool.terminate()
             async_end_time = time.time()
-            log.debug("%s Total Tile Export Time: %f" % (aNormalizer.method, async_end_time-async_start_time))
+            log.debug("%s Tile Export Time: %f" % (aNormalizer.method, async_end_time-async_start_time))
         
         the_wsi.close()
+        log.debug("%s - %s total multiprocess tile export time: %f" % (self.wsi_id, tile_cnt_str, time.time() - export_start_time) )
+
         return
 
     # Override string representation function
@@ -849,7 +878,8 @@ class WsiManager:
         Output:
             New WsiManager object based on data contained in given directory.
         '''
-
+        import_start_time = time.time()
+        log.info("Importing WsiManager from Path -- Input Directory: %s" % (indir)) 
         #Find and validate output directory
         if indir is None:
             raise ValueError("No input directory has been supplied")
@@ -897,6 +927,8 @@ class WsiManager:
         else:
             raise ValueError("Input path is not a Path or a string.")
         
+        log.debug("%s - Total WsiManager import time: %f" % (newObj.wsi_id, time.time() - import_start_time) )
+
         return(newObj)
 
 
