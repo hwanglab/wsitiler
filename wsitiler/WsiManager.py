@@ -73,7 +73,7 @@ class WsiManager:
 
         Output:
             new WSIManager object
-        """ % (PIXELS_PER_TILE,MIN_FOREGROUND_THRESHOLD,NOISE_SIZE_MICRONS)
+        """ % (WsiManager.PIXELS_PER_TILE,WsiManager.MIN_FOREGROUND_THRESHOLD,WsiManager.NOISE_SIZE_MICRONS)
         log.info("Generating new WsiManager Instance -- ID: %s, WSI: %s" % (wsi_id, wsi_src))
         constructor_start_time = time.time()
 
