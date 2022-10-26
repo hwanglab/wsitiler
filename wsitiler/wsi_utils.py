@@ -28,7 +28,7 @@ def describe_wsi_levels(wsi_object: openslide.OpenSlide):
         wsi_object = openslide.open_slide(str(wsi_object))
     elif isinstance(wsi_object, str):
         wsi_object = openslide.open_slide(wsi_object)
-    elif isinstance(wsi_object, openslide.OpenSlide ):
+    elif not isinstance(wsi_object, openslide.OpenSlide ):
         raise ValueError("Input is not valid OpenSlide instance")
 
     #Get baseline parameters for max magnification
@@ -69,7 +69,7 @@ def find_wsi_level(wsi_object: openslide.OpenSlide,level_query: str="0"):
         wsi_object = openslide.open_slide(str(wsi_object))
     elif isinstance(wsi_object, str):
         wsi_object = openslide.open_slide(wsi_object)
-    elif isinstance(wsi_object, openslide.OpenSlide ):
+    elif not isinstance(wsi_object, openslide.OpenSlide ):
         raise ValueError("Input is not valid OpenSlide instance")
 
     # Determine wuery field based on query value
