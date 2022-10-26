@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name='wsitiler',
-    version='0.0.2',
+    version='0.0.3',
     author='Jean R. Clemenceau',
     author_email='clemenceau.jean@mayo.com',
     description='Tools for dividing pathology whole slide images into tiles and save them as individual files.',
