@@ -1,14 +1,33 @@
-# Based on code from: https://github.com/schaugf/HEnorm_python
-# Modified by Isaiah Pressman
+"""
+MacenkoNormalizer.py
+Implement MacenkoNormalizer class for applying macenko normalization to H&E images.
+
+
+Original macenko normalization code from:
+https://github.com/schaugf/HEnorm_python
+Modified by Isaiah Pressman (@IsaiahPressman)
+
+Reference:
+    A method for normalizing histology slides for quantitative analysis. M.
+    Macenko et al., ISBI 2009
+
+Class Implementation: Jean R Clemenceau
+Date Created: 01/11/2021
+"""
 
 import numpy as np
+from wsitiler.normalizer.Normalizer import Normalizer
 
-class MacenkoNormalizer(object):
+class MacenkoNormalizer(Normalizer):
     """
-    A stain normalization object
+    Stain normalization class implementing Macenko stain normalization.
+    This class is inherited from wsitiler.Normalizer
     """
 
     def __init__(self):
+        #Inherit attributes from parent
+        super().__init__(method_name="macenko")
+
         # Default values
         self.HERef = np.array([[0.5626, 0.2159],
                                [0.7201, 0.8012],
@@ -58,6 +77,7 @@ class MacenkoNormalizer(object):
     def fit(self, reference_img, **kwargs):
         # reference_img = MacenkoNormalizer.standardize_brightness(reference_img)
         self.HERef, self.maxCRef = MacenkoNormalizer.get_HE_maxC(reference_img, **kwargs)
+        self.is_fit = True
 
     def transform(self, img, get_H_E_results=False, Io=240, alpha=1, beta=0.15):
         """
@@ -131,3 +151,6 @@ class MacenkoNormalizer(object):
             return Inorm, H, E
         else:
             return Inorm
+
+    def __repr__(self):
+            return super().__repr__()
