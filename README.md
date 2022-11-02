@@ -25,7 +25,7 @@ WSItiler tries to optimize the pre-processing of Pathology Whole Slide Images (W
 
 ## Usage
 
-1. You can ```import wsitiler``` into your own script to set up a custom pipeline or use the supplied color normalization methods under ```wsitiler.normalizer```.
+1. You can ```import wsitiler``` into your own script to set up a custom pipeline with ```wsitiler.wsiManager``` or use the supplied color normalization methods under ```wsitiler.normalizer```.
 1. You can run WSItiler from the command line as an executable script by running the following command within the appropriate Python environment:
 
     ```bash
@@ -35,7 +35,10 @@ WSItiler tries to optimize the pre-processing of Pathology Whole Slide Images (W
     ```bash
         python -m wsitiler.tiler -h
     ```
-
+1. You can collect a summary of your processed WSI using the ```describe_dataset.py``` script:
+    ```bash
+        python -m wsitiler.describe_dataset -i <list of input directories> -o <file output directory> -c <number of cores> 
+    ```  
 
 ## Contributing
 Pull requests are welcome. Ideally, please open an issue first to discuss what you would like to change. Please follow these steps:
