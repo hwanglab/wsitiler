@@ -18,13 +18,13 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import logging as log
 
-from PIL import Image
+from copy import copy
 from typing import List
-from pathlib import Path
-from math import ceil, floor
 from skimage import measure
+from math import ceil, floor
 from scipy import ndimage as ndi
 from skimage.color import rgb2gray
+from pathlib import Path, WindowsPath
 from skimage.filters import threshold_otsu
 from skimage.morphology import remove_small_objects, opening,closing, square
 
@@ -529,7 +529,10 @@ class WsiManager:
             if showTiles:
                 mask_tiles_y = np.array(self.tile_data['mask_y'])
                 mask_tiles_x = np.array(self.tile_data['mask_x'])
-                tissue_tiles_idx = self.tile_data[ ~pd.isnull(self.tile_data.tilename) ].index
+                if hasattr(self,"parent_id"):
+                    mask_tiles_y = mask_tiles_y-mask_tiles_y[0]
+                    mask_tiles_x = mask_tiles_x-mask_tiles_x[0]
+                tissue_tiles_idx = np.where(~pd.isnull(self.tile_data.tilename))
                 tissue_points_y = mask_tiles_y[tissue_tiles_idx]+(self.thumbnail_ppt_y/2)
                 tissue_points_x = mask_tiles_x[tissue_tiles_idx]+(self.thumbnail_ppt_x/2)
 
@@ -609,7 +612,7 @@ class WsiManager:
 
         return(finalPath)
 
-    def export_tiles(self, filetype = "png", tile_idx_list: List[str]=[], outdir: Path=None, normalizer=None, ref_img: Path=None, wsi_image: openslide.OpenSlide=None):
+    def export_tiles(self, filetype = "png", tile_idx_list: List[str]=[], outdir: Path=None, normalizer=None, ref_img: Path=None, wsi_image: openslide.OpenSlide=None, symlinks=True):
         """
         Import a WSI, split in to tiles, normalize color if requested, and save individual tile files to output directory.
 
@@ -621,7 +624,7 @@ class WsiManager:
             normalizer (str or Normalizer): Valid name or Normalizer object to be used for tile stain normalization. Default: [None].
             ref_img (Path): Path to reference image for stain normalization. Default: Default image reference from wsitiler.normalizer.
             wsi_image (Openslide): OpenSlide object used to extract image tiles (used for multiprocessing). Default: [None].
-
+            symlink (bool): Wether or not to generat symlinks to existing corresponfing tiles if object is derived from another (Unix only). Default: [True]
         Output:
             Funtion exports tiles as files to output directory.
         """
@@ -694,8 +697,44 @@ class WsiManager:
         else:
             exported_tiles = self.tile_data.iloc[tile_idx_list]
         log.debug("Tiles for exporting: %d" % len(exported_tiles))
+
+        # Generate symlinks if object has parent and requested
+        if symlinks:
+            if not hasattr(self,"parent_id"):
+                log.warning("Object does not have a parent. Object will generate new tiles instead of symlinks.")
+            elif type(final_outdir) == WindowsPath:
+                log.warning("Symlinks to tiles are not supported in Windows. Object will generate new tiles instead of symlinks.")
+            else:
+                parent_tile_path = self.outdir / self.parent_id/ "tiles" / normalizer.method
+
+                if not parent_tile_path.is_dir():
+                    log.warning("Parent object does not have required tiles. Object will generate new tiles instead of symlinks.")
+                else:
+                    # Process and link each tile sequentially
+                    linking_start_time = time.time()
+                    for index, aTile in exported_tiles.iterrows():
+                        #Avoid reading unnecesary tiles
+                        if aTile['tilename'] is not np.NaN and aTile['tilename'] is not None:
+                            filename = (aTile['tilename']+"."+filetype)
+                            link_path = final_outdir / filename
+                            target_path = parent_tile_path / filename
+
+                            if link_path.is_file():
+                                log.warning("Tile #%d's file exists, cannot make symlink: %s. SKIPPING" % (index,filename) )
+                                continue
+                            if target_path.is_file():
+                                link_path.symlink_to(target= target_path, target_is_directory=False)
+                                log.debug("Symlinking tile #%d: %s" % (index,filename) )
+                            else:
+                                log.warning("Tile #%d not symlinked. File not available: %s" % (index, filename) )
+                        else:
+                            log.debug("Tile filename unavailable (#%d)" % index )
+                
+                    # Terminate function to avoid generating copies of tiles
+                    log.debug("%s - %s tile symlink time: %f" % (self.wsi_id, tile_cnt_str, time.time() - linking_start_time) )
+                    return
         
-        # Open and prepare input WSI if not given
+        # If making tiles, open and prepare input WSI if not given
         wsi_given = True
         if wsi_image is None:
             wsi_given = False
@@ -710,20 +749,22 @@ class WsiManager:
         # Process and export each tile sequentially
         tiling_start_time = time.time()
         for index, aTile in exported_tiles.iterrows():
-
-            # Extract tile region
-            aTile_img = wsi_image.read_region((aTile["wsi_x"], aTile["wsi_y"]), level=0,
-                                    size=(self.wsi_ppt_x, self.wsi_ppt_y))
-
-            #Convert to RGB array
-            aTile_img = np.array( aTile_img.convert('RGB') )
-
-            # Normalize if required
-            if normalizer != None:
-                aTile_img = normalizer.transform(aTile_img)
-
-            # Save tile image to file
+            
+            #Avoid reading unnecesary tiles
             if aTile['tilename'] is not np.NaN and aTile['tilename'] is not None:
+
+                # Extract tile region
+                aTile_img = wsi_image.read_region((aTile["wsi_x"], aTile["wsi_y"]), level=0,
+                                        size=(self.wsi_ppt_x, self.wsi_ppt_y))
+
+                #Convert to RGB array
+                aTile_img = np.array( aTile_img.convert('RGB') )
+
+                # Normalize if required
+                if normalizer != None:
+                    aTile_img = normalizer.transform(aTile_img)
+
+                # Save tile image to file
                 filename = (aTile['tilename']+"."+filetype)
                 if filetype == 'png':
                     plt.imsave(final_outdir / filename, aTile_img)
@@ -734,10 +775,10 @@ class WsiManager:
                 log.debug("Exporting tile #%d: %s" % (index,filename) )
             else:
                 log.debug("Tile filename unavailable (#%d)" % index )
-            tiling_end_time = time.time()
-            log.debug("Tile Export Time: %f" % (tiling_end_time-tiling_start_time))
+        
+        tiling_end_time = time.time()
+        log.debug("Tile Export Time: %f" % (tiling_end_time-tiling_start_time))
             
-
         if not wsi_given:
             wsi_image.close()
 
@@ -870,6 +911,66 @@ class WsiManager:
         repr_str = "<"+repr_str+">"
 
         return(repr_str)
+
+    def split_by_tissue(self, label: int=None):
+        """
+        Generates a new WsiManager object containing only data for the desired labeled tissue chunk.
+
+        Input:
+            label (int): Label number for desired tissue chunk (or string of comma-separated list of desired labels). Required.
+        Output:
+            Creates new WsiManager object with subset of data.
+        """
+        log.info("Splitting WsiManager -- ID: %s, Label(s): %s" % (self.wsi_id, label))
+
+        #Process & Validate label input
+        if label is None:
+            raise ValueError("No label has been given.")
+        if not hasattr(self,"tissue_chunk_mask"):
+            raise ValueError("Tissue segmentation data not available.")
+
+        if type(label) == str:
+            label = [int(i) for i in label.split(",") if int(i) in np.unique(self.tile_data.chunk_id)]
+            if len(label) < 1:
+                raise ValueError("Given labels do not exist.")
+        elif type(label) == int:
+            if label not in np.unique(self.tile_data.chunk_id):
+                raise ValueError("Given label is does not exist.")
+            else:
+                label = [label]
+
+        #Create copy of current WsiManager
+        split_wm = copy(self)
+        split_wm.subset_label = label
+        split_wm.parent_id = split_wm.wsi_id
+
+        #Adjust new split ID
+        split_wm.wsi_id = split_wm.wsi_id + "+#%s" % "-".join([str(i) for i in label])
+
+        #Find thumbnail dimensions: tissue tiles plus margin
+        min_x = min(split_wm.tile_data.loc[split_wm.tile_data.chunk_id.isin(label)].mask_x)-split_wm.thumbnail_ppt_x
+        max_x = max(split_wm.tile_data.loc[split_wm.tile_data.chunk_id.isin(label)].mask_x)+split_wm.thumbnail_ppt_x
+        min_y = min(split_wm.tile_data.loc[split_wm.tile_data.chunk_id.isin(label)].mask_y)-split_wm.thumbnail_ppt_y
+        max_y = max(split_wm.tile_data.loc[split_wm.tile_data.chunk_id.isin(label)].mask_y)+split_wm.thumbnail_ppt_y
+
+        #Trim tiles
+        split_wm.tile_data = split_wm.tile_data[
+            (split_wm.tile_data.mask_x >= min_x) &
+            (split_wm.tile_data.mask_x <= max_x) &
+            (split_wm.tile_data.mask_y >= min_y) &
+            (split_wm.tile_data.mask_y <= max_y)
+        ]
+
+        #Get names for all image masks
+        mask_vars = [i for i in split_wm.__dict__.keys() if i.endswith('_mask')]
+        mask_vars = ['thumbnail'] + mask_vars
+
+        #Trim masks
+        for aMask in mask_vars:
+            setattr(split_wm,aMask, getattr(split_wm,aMask)[min_y:max_y,min_x:max_x] )
+
+        return(split_wm)
+
 
     #### Set Class Methods ####
     @classmethod
