@@ -116,7 +116,7 @@ class WsiManager:
                 else:
                     raise ValueError("File type of given WSI source is not supported.")
             else:
-                raise ValueError("WSI source filepath is not a file.")
+                raise FileNotFoundError("WSI source filepath is not a file.")
 
         #Validate WSI ID
         if wsi_id is None and wsi_src is None:
@@ -656,7 +656,7 @@ class WsiManager:
                     if ref_img is None:
                         ref_img = norm.get_target_img()
                     elif not ref_img.is_file():
-                        raise ValueError ("Supplied reference image path is not a file or does not exist.")
+                        raise FileNotFoundError("Supplied reference image path is not a file or does not exist.")
                     
                     #Fit normalizer if not fit
                     normalizer.fit(ref_img)
@@ -1010,6 +1010,11 @@ class WsiManager:
                 newObj.wsi_src = Path(jsonData['wsi_src'])
                 newObj.outdir = Path(jsonData['outdir'])
                 newObj.normalization = jsonData['normalization']
+
+                # Get parent WM data if available
+                if "parent_id" in jsonData.keys():
+                    newObj.parent_id = jsonData['parent_id']
+                    newObj.subset_label = jsonData['subset_label']
 
                 # Save tile metaparameters
                 newObj.wsi_mpp = jsonData['wsi_mpp']
