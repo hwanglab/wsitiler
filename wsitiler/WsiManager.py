@@ -976,18 +976,20 @@ class WsiManager:
 
         return(split_wm)
 
-    def annotate_from_binmask(self, label: str, mask: np.ndarray=None, maskPath: Path=None, label_color: str="red", threshold: float=0, export = False):
+    def annotate_from_binmask(self, label: str, mask: np.ndarray=None, maskPath: Path=None, label_color: str="red", threshold: float=0, export_mask = False):
         """
-        Exports metadata from a about tissue chunks in a given WsiMaanager object.
+        Annotates a WsiManager object's tiles according to a binary mask image of a given feature.
 
         Input:
             self (WsiManager): A WsiManager object to be annotated by a binary mask. Required.
+            label (string): Name of the feature of interest to be annotated.
             mask (Path): File path to directory containing a WsiManager's files.
             maskPath (Path): File path to directory containing a WsiManager's files.
             label_color (str): Coloe name or hex code <#FFFFFF> used in input mask.
             threshold (float): Threshold value for proportion of mask in a tile necessary to annotate a tile.
+            export_mask (bool): Export binary mask as image to the object's output directory.
         Output:
-            Annotates WsiManager object by saving a mask and assigning tiles.
+            Annotates WsiManager object by saving a mask and assigning tiles to object.
         """
 
         log.info("Annotating from binary mask -- ID: %s, Label: %s" % (self.wsi_id, label))
@@ -1070,7 +1072,7 @@ class WsiManager:
         log.debug("Labeling %d foreground tiles as positive if mask proportion > %f" % (len(tissue_tiles), threshold))
         self.tile_data.loc[tissue_tiles,label] = self.tile_data.iloc[tissue_tiles].apply(tile_check, axis=1)
 
-        if export:
+        if export_mask:
             log.info("Exporting imported %s mask to directory: %s" % (label, self.outdir))
             self.export_bin_mask(maskName=maskName)
 
