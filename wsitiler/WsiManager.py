@@ -8,24 +8,26 @@ Author: Jean R Clemenceau
 Date Created: 18/09/2022
 """
 
-import openslide
 import time
 import json
+import openslide
 import numpy as np
 import pandas as pd
+import logging as log
 import multiprocessing as mp
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-import logging as log
 
 from copy import copy
 from typing import List
 from skimage import measure
 from math import ceil, floor
 from scipy import ndimage as ndi
-from skimage.color import rgb2gray
 from pathlib import Path, WindowsPath
+from matplotlib import colors
+from skimage import transform
 from skimage.filters import threshold_otsu
+from skimage.color import rgb2gray, rgba2rgb
 from skimage.morphology import remove_small_objects, opening,closing, square
 
 from wsitiler.wsi_utils import describe_wsi_levels
@@ -912,11 +914,14 @@ class WsiManager:
 
         return(repr_str)
 
+#### Implement Additional Functionality ####
+
     def split_by_tissue(self, label: int=None):
         """
         Generates a new WsiManager object containing only data for the desired labeled tissue chunk.
 
         Input:
+            self (WsiManager): A WsiManager object to be subsetted. Required.
             label (int): Label number for desired tissue chunk (or string of comma-separated list of desired labels). Required.
         Output:
             Creates new WsiManager object with subset of data.
@@ -971,6 +976,106 @@ class WsiManager:
 
         return(split_wm)
 
+    def annotate_from_binmask(self, label: str, mask: np.ndarray=None, maskPath: Path=None, label_color: str="red", threshold: float=0, export = False):
+        """
+        Exports metadata from a about tissue chunks in a given WsiMaanager object.
+
+        Input:
+            self (WsiManager): A WsiManager object to be annotated by a binary mask. Required.
+            mask (Path): File path to directory containing a WsiManager's files.
+            maskPath (Path): File path to directory containing a WsiManager's files.
+            label_color (str): Coloe name or hex code <#FFFFFF> used in input mask.
+            threshold (float): Threshold value for proportion of mask in a tile necessary to annotate a tile.
+        Output:
+            Annotates WsiManager object by saving a mask and assigning tiles.
+        """
+
+        log.info("Annotating from binary mask -- ID: %s, Label: %s" % (self.wsi_id, label))
+
+        # Validate mask input
+        if mask is None:
+            if maskPath is None:
+                raise ValueError("No mask or path to mask were given.")
+            else:
+                if type(maskPath) == str:
+                    maskPath = Path(maskPath)
+                elif not issubclass( type(maskPath), Path):
+                    raise ValueError("Mask path value is not a file path.")
+
+                if not maskPath.is_file():
+                    raise FileNotFoundError("Mask image file was not found.")
+                else:
+                    # Import image
+                    mask = np.array(plt.imread(maskPath))
+
+        # Validate dimensions for mask ndarray
+        if len(mask.shape) < 2 or len(mask.shape) > 4:
+            raise ValueError("Mask image format has too many dimensions.")
+
+        #check if mask image is formatted as RGBA
+        if len(mask.shape) == 4:
+            mask = np.array(rgba2rgb(mask))
+        
+        #if image is RGB, make binary mask
+        if len(mask.shape) == 3:
+
+            if mask.shape[2]==2 or mask.shape[2] > 3:
+                raise ValueError("Mask image has incompatible number of channels (must be grayscale or RGB).")
+
+            elif mask.shape[2] == 3:
+                #Process positive label color
+                if label_color.startswith("#"):
+                    posLabel = colors.hex2color(label_color)
+                else:
+                    posLabel = colors.to_rgb(label_color)
+
+                mask = np.all(posLabel == mask, axis=2)
+
+        # Validate that mask is binary
+        if len(np.unique(mask)) > 2:
+            raise ValueError("The provided mask is not binary.")
+        else:
+            # If mask is binary, make sure it is boolean
+            mask = (mask*1 > 0)
+
+        # Check aspect ratios
+        thumbnail_ar = self.thumbnail.shape[0]/self.thumbnail.shape[1]
+        mask_ar = mask.shape[0]/mask.shape[1]
+        ar_err = abs(1-(mask_ar/thumbnail_ar))
+        log.debug("Aspect Ratio too different -- WSI: %f, Mask: %f, Percent diff: %f" % (thumbnail_ar, mask_ar, ar_err))
+
+        if ar_err > 0.01:
+            raise ValueError("Mask & slide proportions are too different. Consider image co-registration first.")
+            #TODO: Implement co-registration
+        else:
+            # Fit mask to thumbnail if within margin of error (<=1%)
+            mask = transform.resize(mask,self.tissue_mask.shape,order=0)
+
+        # Save mask to object
+        maskName = label+"_mask"
+        setattr(self,maskName,mask)
+        log.debug("Saved mask to object as: %s" % (maskName))
+
+        # Prepare functions to check which tiles pass mask threshold
+        mask_tile = lambda x,y: mask[y:y+self.thumbnail_ppt_y, x:x+self.thumbnail_ppt_x]
+        tile_check = lambda aTile: (np.sum(mask_tile(aTile['mask_x'],aTile['mask_y'])) / mask_tile(aTile['mask_x'],aTile['mask_y']).size) > threshold
+
+        # Create new column for new labels
+        self.tile_data[label] = False
+
+        # Identify tissue foreground for computational efficiency
+        tissue_tiles = self.tile_data[ ~pd.isnull(self.tile_data.tilename) ].index
+
+        # Annotate tiles where mask presence is above threshold
+        log.debug("Labeling %d foreground tiles as positive if mask proportion > %f" % (len(tissue_tiles), threshold))
+        self.tile_data.loc[tissue_tiles,label] = self.tile_data.iloc[tissue_tiles].apply(tile_check, axis=1)
+
+        if export:
+            log.info("Exporting imported %s mask to directory: %s" % (label, self.outdir))
+            self.export_bin_mask(maskName=maskName)
+
+        return
+
 
     #### Set Class Methods ####
     @classmethod
@@ -1009,6 +1114,7 @@ class WsiManager:
                 newObj.wsi_id = jsonData['wsi_id']
                 newObj.wsi_src = Path(jsonData['wsi_src'])
                 newObj.outdir = Path(jsonData['outdir'])
+                newObj.img_lvl = jsonData['img_lvl']
                 newObj.normalization = jsonData['normalization']
 
                 # Get parent WM data if available
@@ -1034,7 +1140,7 @@ class WsiManager:
                     setattr(newObj,key,ar)
 
         else:
-            raise ValueError("Input path is not a Path or a string.")
+            raise FileNotFoundError("No input json files found in given path.")
         
         log.debug("%s - Total WsiManager import time: %f" % (newObj.wsi_id, time.time() - import_start_time) )
 
