@@ -983,9 +983,9 @@ class WsiManager:
         Input:
             self (WsiManager): A WsiManager object to be annotated by a binary mask. Required.
             label (string): Name of the feature of interest to be annotated.
-            mask (Path): File path to directory containing a WsiManager's files.
-            maskPath (Path): File path to directory containing a WsiManager's files.
-            label_color (str): Coloe name or hex code <#FFFFFF> used in input mask.
+            mask (ndarray): A Numpy ndarray containing either a binary or RGB image data for a feature mask. (optional if supplying path to image)
+            maskPath (Path): File path to an image for a binary feature mask. (optional if supplying mask as ndarray)
+            label_color (str): Color name or hex code <#FFFFFF> used in input mask. (Optional: used if >1 mask present in image)
             threshold (float): Threshold value for proportion of mask in a tile necessary to annotate a tile.
             export_mask (bool): Export binary mask as image to the object's output directory.
         Output:
@@ -1011,20 +1011,21 @@ class WsiManager:
                     mask = np.array(plt.imread(maskPath))
 
         # Validate dimensions for mask ndarray
-        if len(mask.shape) < 2 or len(mask.shape) > 4:
+        if len(mask.shape) < 2 or len(mask.shape) > 3:
             raise ValueError("Mask image format has too many dimensions.")
-
-        #check if mask image is formatted as RGBA
-        if len(mask.shape) == 4:
-            mask = np.array(rgba2rgb(mask))
         
         #if image is RGB, make binary mask
         if len(mask.shape) == 3:
 
-            if mask.shape[2]==2 or mask.shape[2] > 3:
+            if mask.shape[2]==2 or mask.shape[2] > 4:
                 raise ValueError("Mask image has incompatible number of channels (must be grayscale or RGB).")
+            
+            #if mask image is formatted as RGBA, remove alpha channel
+            if mask.shape[2]== 4:
+                mask = np.array(rgba2rgb(mask))
 
-            elif mask.shape[2] == 3:
+            #if mask image is formatted as RGB, dichotomize to single channel
+            if mask.shape[2] == 3:
                 #Process positive label color
                 if label_color.startswith("#"):
                     posLabel = colors.hex2color(label_color)
@@ -1044,7 +1045,7 @@ class WsiManager:
         thumbnail_ar = self.thumbnail.shape[0]/self.thumbnail.shape[1]
         mask_ar = mask.shape[0]/mask.shape[1]
         ar_err = abs(1-(mask_ar/thumbnail_ar))
-        log.debug("Aspect Ratio too different -- WSI: %f, Mask: %f, Percent diff: %f" % (thumbnail_ar, mask_ar, ar_err))
+        log.debug("Aspect Ratios -- Thumbnail: %f, Mask: %f, Percent diff: %f" % (thumbnail_ar, mask_ar, ar_err))
 
         if ar_err > 0.01:
             raise ValueError("Mask & slide proportions are too different. Consider image co-registration first.")
