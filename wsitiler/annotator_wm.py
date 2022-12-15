@@ -56,6 +56,17 @@ def iscolor(col: str):
     except ValueError:
         return None
 
+def exportWM(theWM: wm):
+    '''
+    Exports info for a WsiManager object (for multiprocesising).
+        Input:
+            theWM (WsiManager): WsiManager object to export info.
+        Output:
+            None
+    '''
+    theWM.export_info()
+    return
+
 ## Annotation functions##
 
 def annotate_from_mask(theWMpath: Path,label: str, maskPath: Path, label_color: str="red", value_threshold: float=None, tile_threshold: float=0, dry_run=False, outdir: Path=None):
@@ -433,7 +444,7 @@ if __name__ == '__main__':
     core_cnt = min(len(all_wm_paths), args['cores'])
     log.debug("Processing WM instances using %d cores" % core_cnt)
 
-    # Process tiles in parallel        
+    # Process annotations in parallel        
     pool = mp.Pool(core_cnt)
     resWM = []
     for i,annotRun in params.iterrows():
@@ -459,12 +470,21 @@ if __name__ == '__main__':
     if not args['dry_run']:
         #Get all results
         resWM = [aRes.get() for aRes in resWM]
-        #TODO parallelize
-        for aWM in resWM:
-            aWM.export_info()
+
+        # Parallelize export of annotated WM objects
+        pool = mp.Pool(core_cnt)
+        for i,aWM in enumerate(resWM):
+            pool.apply_async(func=exportWM,kwds={"theWM":aWM})
+        pool.close()
+        pool.join()
+        pool.terminate()
 
     #TODO: Fix error output given always forcing filestructure for dry run 
+    #TODO: Add logs
+    #TODO: always export masks
+    #TODO: implement tissue coregistration
 
+    
     
 
 
