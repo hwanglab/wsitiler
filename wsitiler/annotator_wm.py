@@ -19,7 +19,7 @@ from skimage import transform
 from matplotlib import colors
 # from skimage.filters import threshold_otsu
 from skimage.color import rgba2rgb, rgb2gray
-
+from skimage.morphology import opening, closing, square
 # import wsitiler.normalizer as norm
 from wsitiler.WsiManager import WsiManager as wm
 
@@ -184,7 +184,7 @@ def annotate_from_mask(theWMpath: Path,label: str, maskPath: Path, label_color: 
 
     return theWM
 
-def annotate_from_thumbnail(theWMpath: Path,label: str, maskPath: Path, label_color: str="red", tile_threshold: float=0, dry_run=False, outdir: Path=None):
+def annotate_from_thumbnail(theWMpath: Path,label: str, maskPath: Path, label_color: str="red", tile_threshold: float=0, dry_run=False, outdir: Path=None, clean_edges: bool=False):
     '''
     Annotates a WsiManager object's tiles according to an annotated image of the WSI's thumbnail image of a given feature.
 
@@ -247,6 +247,11 @@ def annotate_from_thumbnail(theWMpath: Path,label: str, maskPath: Path, label_co
 
             # Ensure binary mask is boolean
             mask = np.all(posLabel == mask, axis=2)
+
+    # Cleanup mask edges
+    if(clean_edges):
+        mask = closing(mask, square(5))
+        mask = opening(mask, square(5))
 
     # Check aspect ratios
     thumbnail_ar = theWM.thumbnail.shape[0]/theWM.thumbnail.shape[1]
@@ -325,14 +330,15 @@ if __name__ == '__main__':
     ap.add_argument('-a', '--annotation_type', choices=ANNOT_TYPE_KEYS, default=ANNOT_TYPE_KEYS[0], help="Type of annotation masks.Default: [%s]" % ANNOT_TYPE_KEYS[0])
     ap.add_argument('-l', '--label', default=None, help='Name of the feature being annotated. Optional if providing settings.csv file')
     ap.add_argument('-s', '--settings', default=None, help='Numeric threshold value for non-binary masks, color name or hex value for binary mask, or path to settings.csv file. Required')
+    ap.add_argument('-e', '--tidy_mask_edges', action='store_true', help='Set this flag clean & smooth edges when using an annotated thumbnail mask. Default: [False]')  
     ap.add_argument('-t', '--tile_threshold', default=0.0, type=float, help='Minimum proportion of positive pixels to annotate a tile as positive. Default: [0.0]' )
     ap.add_argument('-c', '--cores', default=mp.cpu_count(), type=int, help='Numbers of processes to be spun up in parallel to process each WSI. Default: [%d]' % mp.cpu_count() )
     ap.add_argument('-v', '--verbose', action='count', help='Print updates and reports as program executes. Provide the following number of "v" for the following settings: [Default: Error, v: Warning, vv: Info, vvv: Debug]')
     ap.add_argument('-y', '--dry_run', action='store_true', help='Set this flag to output annotation maps without saving annotated object (Good for testing parameters). Default: [False]')  
-    args = vars(ap.parse_args())
+    # args = vars(ap.parse_args())
     
     # args = vars(ap.parse_args(['-i','/home/clemenj/Data/brain/Mouse_PDX/tiled_wsis/SG_01/','-m','/home/clemenj/Data/BLCA_TRRC2819/CCF_Batch2_outputs/pred_tils/SG_01_color.png','-l','predicted_TIL','-s','red','-c','20','-vvvvv'])) #TODO: rm
-    # args = vars(ap.parse_args(['-i','/home/clemenj/Data/BLCA_TRRC2819/wsi_sample_tiled/','-m','/home/clemenj/Data/BLCA_TRRC2819/wsi_sample_test_annots','-l','artifacts','-s','black','-c','20','-vvvvv',"-y"])) #TODO: rm
+    args = vars(ap.parse_args(['-i','/home/clemenj/Data/BLCA_TRRC2819/wsi_sample_tiled/','-m','/home/clemenj/Data/BLCA_TRRC2819/wsi_sample_test_annots','-a','thumbnail','-l','artifacts','-s','black','-c','20','-vvvvv',"-y"])) #TODO: rm
     # args = vars(ap.parse_args(['-i','/home/clemenj/Data/BLCA_TRRC2819/wsi_sample_tiled/','-m','/home/clemenj/Data/BLCA_TRRC2819/wsi_sample_test_annots','-l','tumor','-s','#00ff00','-c','20','-vvvvv'])) #TODO: rm
     
 
@@ -413,6 +419,7 @@ if __name__ == '__main__':
     params["label"] = args['label']
     params["label_color"] = lab_color
     params["value_threshold"] = val_threshold
+    params['tidy_mask_edges'] = args['tidy_mask_edges']
     params["tile_threshold"] = args['tile_threshold']
     params["dry_run"] = args['dry_run']
     params["outdir"] = output
@@ -454,12 +461,15 @@ if __name__ == '__main__':
             'maskPath': annotRun.mask_path,
             "label_color": annotRun.label_color,
             "value_threshold": annotRun.value_threshold,
+            "clean_edges": annotRun.tidy_mask_edges,
             "tile_threshold": annotRun.tile_threshold,
             "dry_run": annotRun.dry_run,
             "outdir": annotRun.outdir,
             }
         if annotRun.annotation_function == "annotate_from_thumbnail":
             del runArgs['value_threshold']
+        else:
+            del runArgs['clean_edges']
         aRes = pool.apply_async(func=eval(annotRun.annotation_function),kwds=runArgs)
         resWM.append(aRes)
     pool.close()
