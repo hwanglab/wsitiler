@@ -102,7 +102,7 @@ class WsiManager:
         else:
             if isinstance(wsi_src,str):
                 wsi_src = Path(wsi_src)
-            elif not isinstance(wsi_src,Path):
+            elif not issubclass( type(wsi_src), Path):
                 raise ValueError("WSI source filepath is not a Path or a string.")
         
             if wsi_src.is_file():
@@ -132,7 +132,7 @@ class WsiManager:
         if outdir is not None:
             if isinstance(outdir,str):
                 outdir = Path(outdir)
-            elif not isinstance(outdir,Path):
+            elif not issubclass( type(outdir), Path):
                 raise ValueError("Output path is not a Path or a string.")
 
             #if output directory has correct format, save it.
@@ -348,7 +348,7 @@ class WsiManager:
         if outdir is not None:
             if isinstance(outdir,str):
                 outdir = Path(outdir)
-            elif not isinstance(outdir,Path):
+            elif not issubclass( type(outdir), Path):
                 raise ValueError("Output path is not a Path or a string.")
 
             #if output directory has correct format, save it.
@@ -446,7 +446,7 @@ class WsiManager:
                 elif outdir is not None:
                     if isinstance(outdir,str):
                         outdir = Path(outdir)
-                    elif not isinstance(outdir,Path):
+                    elif not issubclass( type(outdir), Path):
                         raise ValueError("Output path is not a Path or a string.")
 
                     #if output directory has correct format, use it directly.
@@ -510,7 +510,7 @@ class WsiManager:
                 elif outdir is not None:
                     if isinstance(outdir,str):
                         outdir = Path(outdir)
-                    elif not isinstance(outdir,Path):
+                    elif not issubclass( type(outdir), Path):
                         raise ValueError("Output path is not a Path or a string.")
 
                     #if output directory has correct format, use it directly.
@@ -584,7 +584,7 @@ class WsiManager:
                 elif outdir is not None:
                     if isinstance(outdir,str):
                         outdir = Path(outdir)
-                    elif not isinstance(outdir,Path):
+                    elif not issubclass( type(outdir), Path):
                         raise ValueError("Output path is not a Path or a string.")
 
                     #if output directory has correct format, use it directly.
@@ -674,7 +674,7 @@ class WsiManager:
         if outdir is not None:
             if isinstance(outdir,str):
                 outdir = Path(outdir)
-            elif not isinstance(outdir,Path):
+            elif not issubclass( type(outdir), Path):
                 raise ValueError("Output path is not a Path or a string.")
 
             #if output directory has correct format, save it.
@@ -742,7 +742,7 @@ class WsiManager:
             wsi_given = False
             wsi_image = openslide.open_slide(str(self.wsi_src))
             log.debug("Default WSI object: %s" % str(wsi_image))
-        elif isinstance(wsi_image, Path):
+        elif issubclass( type(wsi_image), Path):
             log.debug("Supplied WSI path: %s" % str(wsi_image))
             wsi_image = openslide.open_slide(str(wsi_image))
         else:
@@ -840,7 +840,7 @@ class WsiManager:
         if outdir is not None:
             if isinstance(outdir,str):
                 outdir = Path(outdir)
-            elif not isinstance(outdir,Path):
+            elif not issubclass( type(outdir), Path):
                 raise ValueError("Output path is not a Path or a string.")
         elif self.outdir is not None:
             outdir = self.outdir
@@ -1098,7 +1098,7 @@ class WsiManager:
         else:
             if isinstance(indir,str):
                 indir = Path(indir)
-            elif not isinstance(indir,Path):
+            elif not issubclass( type(indir), Path):
                 raise ValueError("Input path is not a Path or a string.")
             
         # format input file
@@ -1167,3 +1167,4 @@ class WsiManager:
 def call_export_tiles(obj, filetype = "png", tile_idx_list: List[str]=[], outdir: Path=None, normalizer=None, ref_img: Path=None, wsi_image: openslide.OpenSlide=None):
     obj.export_tiles(filetype, tile_idx_list, outdir, normalizer, ref_img, wsi_image)
     return
+
