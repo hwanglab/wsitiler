@@ -852,8 +852,8 @@ class WsiManager:
         if cores == 1:
             core_group = 0
         else:
-            core_group = np.repeat( range(0,cores-1), np.floor(len(exported_tiles) / (cores-1)) )
-            core_group = np.append(core_group, np.repeat(cores, (len(exported_tiles)-len(core_group))) )
+            core_group = np.repeat( range(0,cores), np.floor(len(exported_tiles) / (cores)) )
+            core_group = np.append(core_group, np.repeat(core_group[-1], (len(exported_tiles)-len(core_group))) )
         
         exported_tiles['core_group'] = core_group
         log.debug("Tiles for exporting: %d" % len(exported_tiles))
@@ -1167,4 +1167,3 @@ class WsiManager:
 def call_export_tiles(obj, filetype = "png", tile_idx_list: List[str]=[], outdir: Path=None, normalizer=None, ref_img: Path=None, wsi_image: openslide.OpenSlide=None):
     obj.export_tiles(filetype, tile_idx_list, outdir, normalizer, ref_img, wsi_image)
     return
-
