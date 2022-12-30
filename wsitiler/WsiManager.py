@@ -697,7 +697,7 @@ class WsiManager:
             # If no subset given, export all foreground tiles
             exported_tiles = self.tile_data[ ~pd.isnull(self.tile_data.tilename) ]
         else:
-            exported_tiles = self.tile_data.iloc[tile_idx_list]
+            exported_tiles = self.tile_data.loc[self.tile_data.tile_id.isin(tile_idx_list)]
         log.debug("Tiles for exporting: %d" % len(exported_tiles))
 
         # Generate symlinks if object has parent and requested
@@ -825,7 +825,7 @@ class WsiManager:
             # If no subset given, export all foreground tiles
             exported_tiles = self.tile_data[ ~pd.isnull(self.tile_data.tilename) ].copy()
         else:
-            exported_tiles = self.tile_data.iloc[tile_idx_list].copy()
+            exported_tiles = self.tile_data.loc[self.tile_data.tile_id.isin(tile_idx_list)].copy()
         
         # Validate normalizer
         if normalizers is None:
@@ -853,7 +853,7 @@ class WsiManager:
             core_group = 0
         else:
             core_group = np.repeat( range(0,cores), np.floor(len(exported_tiles) / (cores)) )
-            core_group = np.append(core_group, np.repeat(core_group[-1], (len(exported_tiles)-len(core_group))) )
+            core_group = np.append(core_group, np.repeat(0, (len(exported_tiles)-len(core_group))) )
         
         exported_tiles['core_group'] = core_group
         log.debug("Tiles for exporting: %d" % len(exported_tiles))
@@ -864,7 +864,7 @@ class WsiManager:
         #Start exporting iterating over normalization methods
         for aNormMethod in normalizers:
 
-            #Prepare normalizer object
+            # Prepare normalizer object
             if aNormMethod not in norm.NORMALIZER_CHOICES:
                 log.warn("Invalid normalizer option: %s. Skipping tile export." % aNormMethod) 
                 continue
@@ -877,7 +877,7 @@ class WsiManager:
 
             # Export tiles in parallel
             for aCoreGroup in np.unique(core_group):
-                aTileList = list(exported_tiles.index[exported_tiles.core_group == aCoreGroup])
+                aTileList = list(exported_tiles.loc[exported_tiles.core_group == aCoreGroup].tile_id)
                 log.debug("Exporting %d tiles (%s) from group #%d" % (len(aTileList),aNormalizer.method,aCoreGroup) )
 
                 pool.apply_async(func=call_export_tiles,kwds={
@@ -898,7 +898,7 @@ class WsiManager:
         log.debug("%s - %s total multiprocess tile export time: %f" % (self.wsi_id, tile_cnt_str, time.time() - export_start_time) )
 
         return
-
+    
     # Override string representation function
     def __str__(self):
         return f'WsiManager(ID:{self.wsi_id}; Shape: {self.shape}; Tissue Tiles: n={len(self.tile_data[ ~pd.isnull(self.tile_data.tilename) ])})'
@@ -1165,5 +1165,8 @@ class WsiManager:
 
 ###Unbound callable functions for multiprocessing
 def call_export_tiles(obj, filetype = "png", tile_idx_list: List[str]=[], outdir: Path=None, normalizer=None, ref_img: Path=None, wsi_image: openslide.OpenSlide=None):
-    obj.export_tiles(filetype, tile_idx_list, outdir, normalizer, ref_img, wsi_image)
+    try:
+        obj.export_tiles(filetype, tile_idx_list, outdir, normalizer, ref_img, wsi_image)
+    except  Exception as e:
+        log.error("Error exporting tiles in parallel: %s" % str(e) )
     return
