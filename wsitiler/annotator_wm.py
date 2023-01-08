@@ -17,9 +17,9 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from skimage import transform
 from matplotlib import colors
-# from skimage.filters import threshold_otsu
-from skimage.color import rgba2rgb, rgb2gray
-from skimage.morphology import opening, closing, square
+from skimage.filters import threshold_otsu, threshold_yen
+from skimage.color import rgba2rgb, rgb2gray, rgb2hed
+from skimage.morphology import opening, closing, square, remove_small_objects
 # import wsitiler.normalizer as norm
 from wsitiler.WsiManager import WsiManager as wm
 
@@ -38,6 +38,8 @@ def isfloat(num: str):
         return f
     except ValueError:
         return None
+    except TypeError:
+        return None
 
 def iscolor(col: str):
     '''
@@ -54,6 +56,8 @@ def iscolor(col: str):
             c = colors.to_rgb(col)
         return colors.to_hex(c)
     except ValueError:
+        return None
+    except AttributeError:
         return None
 
 def exportWM(theWM: wm):
@@ -284,20 +288,113 @@ def annotate_from_thumbnail(theWMpath: Path,label: str, maskPath: Path, label_co
     return theWM
 
 
-# def annotate_from_ihc(theWM: wm,label: str, maskPath: Path):
-#     '''
-#     Annotates a WsiManager object's tiles by generating binary mask of an IHC slide's DAP channel.
+def annotate_from_ihc(theWMpath: Path,label: str, maskPath: Path, value_threshold: float=None, tile_threshold: float=0, dry_run=False, outdir: Path=None, clean_edges: bool=False):
+    '''
+    Annotates a WsiManager object's tiles by generating binary mask of an IHC slide's DAP channel.
 
-#         Input:
-#             theWM (WsiManager): A WsiManager object to be annotated by a binary mask. Required.
-#             label (string): Name of the feature of interest to be annotated.
-#             maskPath (Path): maskPath (Path): File path to an image for a binary feature mask.
-#             label_color (str): Color name or hex code <#FFFFFF> used in input mask.
-#             value_threshold (float): Threshold value for proportion of mask in a tile necessary to annotate a tile.
-#             tile_threshold (float): Threshold value for proportion of mask in a tile necessary to annotate a tile.
-#         Output:
-#             Annotates WsiManager object by saving a mask and assigning tiles to object.
-#     '''
+         Input:
+            theWMpath (Path): A Path to the directory of the WsiManager to be annotated by a binary mask. Required.
+            label (string): Name of the feature of interest to be annotated.
+            maskPath (Path): maskPath (Path): File path to an image for a binary feature mask.
+            value_threshold (float): Threshold value to dichotomize IHC's DAB channel.(Optional)
+            tile_threshold (float): Threshold value for proportion of mask in a tile necessary to annotate a tile.
+            dry_run (bool): Whether or not to execute as dry-run (export image of resulting mask but not the annotated object)
+            outdir (Path): File path to directory to export annotations to. Optional if WsiManager outdir field has been set.
+        Output:
+            Annotated WsiManager object by saving a mask and assigning tiles to object.
+    '''
+    
+    #Validate and find WM object
+    try:
+        theWM = wm.fromdir(theWMpath)
+        log.info("Annotating from mask image -- ID: %s, Label: %s" % (theWM.wsi_id, label))
+    except FileNotFoundError:
+        raise FileNotFoundError("No WsiManager object was found in input path: %s" % str(theWMpath))
+
+    # Validate and find mask input
+    if maskPath is None:
+        raise ValueError("No mask or path to mask were given.")
+    else:
+        if type(maskPath) == str:
+            maskPath = Path(maskPath)
+        elif not issubclass( type(maskPath), Path):
+            raise ValueError("Mask path value is not a file path.")
+
+        if not maskPath.is_file():
+            raise FileNotFoundError("Mask image file was not found.")
+        else:
+            # Import image
+            mask = np.array(plt.imread(maskPath))
+    
+    # Validate dimensions for mask ndarray
+    if len(mask.shape) != 3:
+        raise ValueError("IHC Mask image format has wrong number of dimensions.")
+    # Verify image is RGB & remove Alpha channel
+    else:
+        if mask.shape[2]<2 or mask.shape[2] > 4:
+            raise ValueError("Mask image has incompatible number of channels (must be RGB).")
+        # If mask image is formatted as RGBA, remove alpha channel
+        if mask.shape[2]== 4:
+            mask = np.array(rgba2rgb(mask))
+
+    # find  and clean IHC tissue mask
+    mask_gray = (rgb2gray(mask) * 255)
+    ihc_tissue_mask = (mask_gray[:, :] < threshold_otsu(mask_gray))
+    ihc_tissue_mask = remove_small_objects(ihc_tissue_mask, 5)
+    ihc_tissue_mask = closing(ihc_tissue_mask, square(5))
+    ihc_tissue_mask = opening(ihc_tissue_mask, square(5))
+
+    # Check aspect ratios 
+    thumbnail_ar = theWM.thumbnail.shape[0]/theWM.thumbnail.shape[1]
+    mask_ar = mask.shape[0]/mask.shape[1]
+    ar_err = abs(1-(mask_ar/thumbnail_ar))
+    log.debug("Aspect Ratios -- Thumbnail: %f, Mask: %f, Percent diff: %f" % (thumbnail_ar, mask_ar, ar_err))
+
+    if ar_err > 0.01:
+        raise ValueError("Mask & slide proportions are too different. Consider image co-registration first.")
+        #TODO: Implement co-registration
+
+    # Identify isolate DAB channel
+    mask_hed = rgb2hed(mask)
+    label_img = mask_hed[:,:,2]
+
+    # Determine threshold for DAB channel
+    if value_threshold is not None:
+        log.debug("Dichotomizing IHC mask from DAB channel with supplied threshold: value > %f" % value_threshold)
+    else:
+        value_threshold = threshold_yen(label_img)
+        log.debug("Dichotomizing IHC mask from DAB channel with Yen's threshold: value > %f" % value_threshold)
+
+    # Apply threshold and generate DAB mask for labeling
+    label_mask = (label_img > value_threshold)
+    label_mask = closing(label_mask, square(5))
+    label_mask = opening(label_mask, square(5))
+    label_mask = remove_small_objects(label_mask, 5)
+
+    #Find and validate output directory if given
+    if outdir is None and theWM.outdir is None:
+        raise ValueError("No output directory has been supplied")
+    elif outdir is not None:
+        if isinstance(outdir,str):
+            outdir = Path(outdir)
+        elif not isinstance(outdir,Path):
+            raise ValueError("Output path is not a Path or a string.")
+
+        #if output directory has correct format, use it directly.
+        if outdir.suffix == "":
+            theWM.outdir = outdir
+            log.debug("Output directory reset-- Wsi_id: %s, Outdir: %s" % (theWM.wsi_id, theWM.outdir))
+
+        else:
+            raise ValueError("Output path does not have directory format.")
+
+    #Apply annotation
+    theWM.annotate_from_binmask(label=label,mask=label_mask,threshold=tile_threshold, export_mask=dry_run)
+    #TODO: if dry run, export mask with H&E as background
+
+    return theWM
+
+    
 
 # def annotate_from_multiplex_ihc(theWM: wm,label: str, maskPath: Path):
 #     '''
@@ -335,11 +432,12 @@ if __name__ == '__main__':
     ap.add_argument('-c', '--cores', default=mp.cpu_count(), type=int, help='Numbers of processes to be spun up in parallel to process each WSI. Default: [%d]' % mp.cpu_count() )
     ap.add_argument('-v', '--verbose', action='count', help='Print updates and reports as program executes. Provide the following number of "v" for the following settings: [Default: Error, v: Warning, vv: Info, vvv: Debug]')
     ap.add_argument('-y', '--dry_run', action='store_true', help='Set this flag to output annotation maps without saving annotated object (Good for testing parameters). Default: [False]')  
-    # args = vars(ap.parse_args())
+    args = vars(ap.parse_args())
     
     # args = vars(ap.parse_args(['-i','/home/clemenj/Data/brain/Mouse_PDX/tiled_wsis/SG_01/','-m','/home/clemenj/Data/BLCA_TRRC2819/CCF_Batch2_outputs/pred_tils/SG_01_color.png','-l','predicted_TIL','-s','red','-c','20','-vvvvv'])) #TODO: rm
-    args = vars(ap.parse_args(['-i','/home/clemenj/Data/BLCA_TRRC2819/wsi_sample_tiled/','-m','/home/clemenj/Data/BLCA_TRRC2819/wsi_sample_test_annots','-a','thumbnail','-l','artifacts','-s','black','-c','20','-vvvvv',"-y"])) #TODO: rm
+    # args = vars(ap.parse_args(['-i','/home/clemenj/Data/BLCA_TRRC2819/wsi_sample_tiled/','-m','/home/clemenj/Data/BLCA_TRRC2819/wsi_sample_test_annots','-a','thumbnail','-l','artifacts','-s','black','-c','20','-vvvvv',"-y"])) #TODO: rm
     # args = vars(ap.parse_args(['-i','/home/clemenj/Data/BLCA_TRRC2819/wsi_sample_tiled/','-m','/home/clemenj/Data/BLCA_TRRC2819/wsi_sample_test_annots','-l','tumor','-s','#00ff00','-c','20','-vvvvv'])) #TODO: rm
+    # args = vars(ap.parse_args(['-i','/home/clemenj/Data/brain/Mouse_PDX/tiled_wsis/181_he+#3','-m','/home/clemenj/Data/brain/Mouse_PDX/tiled_wsis/181_he+#3/info/181_he+#3___tumor_annot.png','-a','ihc','-l','tumor','-c','20','-vvvvv',"-y"])) #TODO: rm
     
 
     # Determine Verbosity
@@ -391,7 +489,7 @@ if __name__ == '__main__':
   
     # Determine value threshold for dichotomizing mask (if needed)
     val_threshold = isfloat(args['settings'])
-    if args['annotation_type'] == "continuous": #or IHC
+    if args['annotation_type'] == "continuous":
         if val_threshold is None:
             log.error("Continuous mask mode was selected, but settings did not supply a float value threshold.")
             quit(code=1)
@@ -495,7 +593,8 @@ if __name__ == '__main__':
     #TODO: implement tissue coregistration
 
     
-    
+# plt.imshow(transform.resize(theWM.thumbnail, label_mask.shape))
+# plt.imshow(label_mask, cmap="winter",alpha=0.5*(label_mask>0))
 
 
     
