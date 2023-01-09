@@ -8,7 +8,9 @@ Date Created: 18/09/2022
 
 import openslide
 import math
+import tifffile
 import pandas as pd
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -92,3 +94,51 @@ def find_wsi_level(wsi_object: openslide.OpenSlide,level_query: str="0"):
         raise ValueError("Level query value not found.")
     
     return(theLevel)
+
+def read_fluorescent_ome_tiff(path: Path):
+    '''
+    Import fluorescent IHC OME-TIFF image from path.
+
+    Input:
+        path (str): Path to OME-TIFF file.
+
+    Output:
+        A tuple with metadata[0] image[1] as numpy array.
+    '''
+    
+    # Validate input
+    if not issubclass( type(path), Path):
+        if isinstance(path, str):
+            path = Path(path)
+        else:
+            raise TypeError("Image path value is not a file path.")
+    if not path.is_file():
+        raise ValueError("File path supplied is not a file.")
+    elif path.suffix not in ['.tif',".tiff",".TIF",".TIFF"]:
+        raise ValueError("Input file has invalid format. Input must be an OME-TIFF file.")
+    
+    # Import data and metadata
+    fihc = tifffile.TiffFile(path)
+
+    # Validate OME format
+    if not fihc.is_ome:
+        raise ValueError("Tiff file has invalid format. Input must be an OME-TIFF file.")
+
+    #Import and process metadata (microns per pixel & channel names)
+    fihc_metadata = ET.fromstring(fihc.ome_metadata)
+
+    image_params = {}
+    channels = []
+
+    for neighbor in fihc_metadata.iter():
+        if neighbor.tag.endswith("Pixels"):
+            image_params["mpp"] = float(neighbor.attrib['PhysicalSizeX']) if "PhysicalSizeX" in neighbor.attrib.keys() else None
+        if neighbor.tag.endswith("Channel"):
+            channels.append(neighbor.attrib['Name'].split("(")[0].strip())
+    image_params['channels'] = channels
+
+    # Import TIF image as np.array
+    fihc_img = tifffile.imread(path)
+
+    return (image_params, fihc_img)
+    
