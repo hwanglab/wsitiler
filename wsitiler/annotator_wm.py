@@ -22,6 +22,7 @@ from skimage.color import rgba2rgb, rgb2gray, rgb2hed
 from skimage.morphology import opening, closing, square, remove_small_objects
 # import wsitiler.normalizer as norm
 from wsitiler.WsiManager import WsiManager as wm
+from wsitiler.wsi_utils import read_fluorescent_ome_tiff
 
 ## Utility functions ##
 
@@ -200,6 +201,7 @@ def annotate_from_thumbnail(theWMpath: Path,label: str, maskPath: Path, label_co
             tile_threshold (float): Threshold value for proportion of mask in a tile necessary to annotate a tile.
             dry_run (bool): Whether or not to execute as dry-run (export image of resulting mask but not the annotated object)
             outdir (Path): File path to directory to export annotations to. Optional if WsiManager outdir field has been set.
+            clean_edges (bool): Whether or not to clean up edges of mask image.
         Output:
             Annotated WsiManager object by saving a mask and assigning tiles to object.
     '''
@@ -288,14 +290,14 @@ def annotate_from_thumbnail(theWMpath: Path,label: str, maskPath: Path, label_co
     return theWM
 
 
-def annotate_from_ihc(theWMpath: Path,label: str, maskPath: Path, value_threshold: float=None, tile_threshold: float=0, dry_run=False, outdir: Path=None, clean_edges: bool=False):
+def annotate_from_ihc(theWMpath: Path,label: str, maskPath: Path, value_threshold: float=None, tile_threshold: float=0, dry_run=False, outdir: Path=None):
     '''
     Annotates a WsiManager object's tiles by generating binary mask of an IHC slide's DAP channel.
 
          Input:
             theWMpath (Path): A Path to the directory of the WsiManager to be annotated by a binary mask. Required.
             label (string): Name of the feature of interest to be annotated.
-            maskPath (Path): maskPath (Path): File path to an image for a binary feature mask.
+            maskPath (Path): maskPath (Path): File path to a chromogenic IHC slide image used for a binary feature mask.
             value_threshold (float): Threshold value to dichotomize IHC's DAB channel.(Optional)
             tile_threshold (float): Threshold value for proportion of mask in a tile necessary to annotate a tile.
             dry_run (bool): Whether or not to execute as dry-run (export image of resulting mask but not the annotated object)
@@ -395,27 +397,122 @@ def annotate_from_ihc(theWMpath: Path,label: str, maskPath: Path, value_threshol
     return theWM
 
     
+def annotate_from_multiplex_ihc(theWMpath: Path,label: str, maskPath: Path, label_channel: str="0", value_threshold: float=None, tile_threshold: float=0, dry_run=False, outdir: Path=None, clean_edges: bool=False):
+    '''
+    Annotates a WsiManager object's tiles by generating binary mask of a fluorescent IHC slide's selected channel.
 
-# def annotate_from_multiplex_ihc(theWM: wm,label: str, maskPath: Path):
-#     '''
-#     Annotates a WsiManager object's tiles according to a binary mask image of a given feature.
+         Input:
+            theWMpath (Path): A Path to the directory of the WsiManager to be annotated by a binary mask. Required.
+            label (string): Name of the feature of interest to be annotated.
+            maskPath (Path): maskPath (Path): File path to an OME-TIFF fluorescent IHC image used for a binary feature mask.
+            label_channel (str): Channel index or name (protein) used as input mask. Default: 0
+            value_threshold (float): Threshold value to dichotomize IHC's DAB channel.(Optional)
+            tile_threshold (float): Threshold value for proportion of mask in a tile necessary to annotate a tile.
+            dry_run (bool): Whether or not to execute as dry-run (export image of resulting mask but not the annotated object)
+            outdir (Path): File path to directory to export annotations to. Optional if WsiManager outdir field has been set.
+            clean_edges (bool): Whether or not to clean up edges of mask image.
 
-#         Input:
-#             theWM (WsiManager): A WsiManager object to be annotated by a binary mask. Required.
-#             label (string): Name of the feature of interest to be annotated.
-#             maskPath (Path): maskPath (Path): File path to an image for a binary feature mask.
-#             label_color (str): Color name or hex code <#FFFFFF> used in input mask.
-#             value_threshold (float): Threshold value for proportion of mask in a tile necessary to annotate a tile.
-#             tile_threshold (float): Threshold value for proportion of mask in a tile necessary to annotate a tile.
-#         Output:
-#             Annotates WsiManager object by saving a mask and assigning tiles to object.
-#     '''
+        Output:
+            Annotated WsiManager object by saving a mask and assigning tiles to object.
+    '''
+
+    #Validate and find WM object
+    try:
+        theWM = wm.fromdir(theWMpath)
+        log.info("Annotating from mask image -- ID: %s, Label: %s" % (theWM.wsi_id, label))
+    except FileNotFoundError:
+        raise FileNotFoundError("No WsiManager object was found in input path: %s" % str(theWMpath))
+
+    # Validate and find mask input
+    if maskPath is None:
+        raise ValueError("No mask or path to mask were given.")
+    else:
+        if type(maskPath) == str:
+            maskPath = Path(maskPath)
+        elif not issubclass( type(maskPath), Path):
+            raise ValueError("Mask path value is not a file path.")
+
+        if not maskPath.is_file():
+            raise FileNotFoundError("Mask image file was not found.")
+        else:
+            # Import image
+            log.debug("Importing fIHC TIF image from: %s" % str(maskPath))
+            (mask_meta, mask_ihc) = read_fluorescent_ome_tiff(maskPath)
+
+    # Validate channel selection
+    if isinstance(label_channel, str):
+        if label_channel.isnumeric():
+            label_channel = int(label_channel)
+        elif label_channel in mask_meta['channels']:
+            label_idx = mask_meta['channels'].index(label_channel)
+        else:
+            ValueError("IHC channel name is not available. Available options are: %s" % (", ".join(mask_meta['channels'])))
+
+    if isinstance(label_channel, int):
+        if label_channel in range(0,len(mask_meta['channels'])):
+            label_idx = label_channel
+        else:
+            raise ValueError("IHC channel index is out of bounds. Value must be within [%d,%d]" % (0,len(mask_meta['channels']-1)))
+    
+    #Get tissue mask (based on sum of all channels)
+    mask_sum = mask_ihc.sum(axis=2)
+    mask_sum = transform.rescale(mask_sum,(1/theWM.thumbnail_ratio), anti_aliasing=False)
+    mask_sum = (mask_sum > threshold_otsu(mask_sum))
+    mask_sum = closing(mask_sum, square(5))
+    mask_sum = opening(mask_sum, square(5))
+
+    noise_size = (theWM.NOISE_SIZE_MICRONS * mask_meta['mpp']) / theWM.thumbnail_ratio
+    mask_sum = remove_small_objects(mask_sum, noise_size)
+
+    # TODO Coregister images #####################################################################################################################
+        
+    #Get mask for label
+    label_channel = mask_meta['channels'][label_idx]
+    mask = mask_ihc[:,:,label_idx]
+
+    # Determine threshold for IHC channel
+    if value_threshold is not None:
+        log.debug("Dichotomizing IHC mask from [%d]%s channel with supplied threshold: value > %f" % (label_idx,label_channel,value_threshold) )
+    else:
+        value_threshold = threshold_otsu(mask)
+        log.debug("Dichotomizing IHC mask from [%d]%s channel with Otsu's threshold: value > %f" % (label_idx,label_channel,value_threshold) )
+
+    # Apply threshold and generate channel mask for labeling
+    label_mask = (mask > value_threshold)
+    label_mask = transform.rescale(label_mask,(1/theWM.thumbnail_ratio), anti_aliasing=False, order=0) > 0
+    if clean_edges:
+        label_mask = closing(label_mask, square(5))
+        label_mask = opening(label_mask, square(5))
+        label_mask = remove_small_objects(label_mask, noise_size)
+    
+    #Find and validate output directory if given
+    if outdir is None and theWM.outdir is None:
+        raise ValueError("No output directory has been supplied")
+    elif outdir is not None:
+        if isinstance(outdir,str):
+            outdir = Path(outdir)
+        elif not isinstance(outdir,Path):
+            raise ValueError("Output path is not a Path or a string.")
+
+        #if output directory has correct format, use it directly.
+        if outdir.suffix == "":
+            theWM.outdir = outdir
+            log.debug("Output directory reset-- Wsi_id: %s, Outdir: %s" % (theWM.wsi_id, theWM.outdir))
+
+        else:
+            raise ValueError("Output path does not have directory format.")
+
+    #Apply annotation
+    theWM.annotate_from_binmask(label=label,mask=label_mask,threshold=tile_threshold, export_mask=dry_run)
+    #TODO: if dry run, export mask with H&E as background
+
+    return theWM
 
 ####################
 
 # Log Levels
 VERBOSE_LEVEL = [log.ERROR, log.WARNING, log.INFO, log.DEBUG]
-ANNOT_TYPES = {"binary":"annotate_from_mask","continuous":"annotate_from_mask","thumbnail":"annotate_from_thumbnail"}#,"ihc":"annotate_from_ihc","fihc":"annotate_from_multiplex_ihc"
+ANNOT_TYPES = {"binary":"annotate_from_mask","continuous":"annotate_from_mask","thumbnail":"annotate_from_thumbnail","ihc":"annotate_from_ihc"}#,"fihc":"annotate_from_multiplex_ihc"
 ANNOT_TYPE_KEYS = list(ANNOT_TYPES.keys())
 
 if __name__ == '__main__':
@@ -566,7 +663,7 @@ if __name__ == '__main__':
             }
         if annotRun.annotation_function == "annotate_from_thumbnail":
             del runArgs['value_threshold']
-        else:
+        if annotRun.annotation_function in ["annotate_from_thumbnail","annotate_from_ihc"]:
             del runArgs['clean_edges']
         aRes = pool.apply_async(func=eval(annotRun.annotation_function),kwds=runArgs)
         resWM.append(aRes)
@@ -588,13 +685,8 @@ if __name__ == '__main__':
         pool.terminate()
 
     #TODO: Fix error output given always forcing filestructure for dry run 
-    #TODO: Add logs
     #TODO: always export masks
     #TODO: implement tissue coregistration
-
-    
-# plt.imshow(transform.resize(theWM.thumbnail, label_mask.shape))
-# plt.imshow(label_mask, cmap="winter",alpha=0.5*(label_mask>0))
 
 
     
