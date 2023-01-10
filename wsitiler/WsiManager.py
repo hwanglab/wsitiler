@@ -554,7 +554,7 @@ class WsiManager:
 
         return(finalPath)
 
-    def export_bin_mask(self, outdir: Path=None, show: bool=False, export: bool=True, maskName: str="tissue_mask"):
+    def export_bin_mask(self, outdir: Path=None, show: bool=False, export: bool=True, maskName: str="tissue_mask", showThumbnail: bool=False):
         """
         Exports and/or displays the a binary mask as an image from a WsiManager object, if available.
 
@@ -563,6 +563,7 @@ class WsiManager:
             show (bool): Wether or not to display the thumbnail as a plot. Default: [False]
             export (bool): Wether or not to export the thumbnail as a PNG file. Default: [True]
             maskName (str): Name of binary mask to be exported. Default: [tissue_mask]
+            showThumbnail (bool): Wether or not to export the thumbnail with mask overlay. Default: [False]
         Output:
             If 'export' is enabled, returns filepath to image, 'None' otherwise.
             Note: Places image in directory: '<outdir>/<wsi_id>/info/' unless a 'outdir' is given.
@@ -604,10 +605,19 @@ class WsiManager:
             plt.figure()
             plt.axis('off')
             plt.margins(0, 0)
-            if show:
+            if showThumbnail:
+                plt.imshow(self.thumbnail)
+                plt.imshow(binMask, cmap="winter",alpha=0.5*(binMask>0))
+            else:
                 plt.imshow(binMask, cmap="Greys_r")
+
             if export:
-                plt.imsave(finalPath, binMask, cmap="Greys_r")
+                # plt.imsave(finalPath, binMask, cmap="Greys_r")
+                plt.savefig(finalPath, bbox_inches='tight', pad_inches=0, format="png", dpi=600)
+            if not show:
+                plt.close()
+            # if show:
+            #     plt.imshow(binMask, cmap="Greys_r")
         
         else:
             raise ValueError("Selected mask is not available as an attribute.")
