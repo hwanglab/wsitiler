@@ -624,7 +624,7 @@ class WsiManager:
 
         return(finalPath)
 
-    def export_heatmap(self, field: str, outdir: Path=None, show: bool=False, export: bool=True, colormap: str=None, showThumbnail: bool=False):
+    def export_heatmap(self, field: str, outdir: Path=None, show: bool=False, export: bool=True, colormap: str=None, showThumbnail: bool=False, img_only: bool=False):
         """
         Exports and/or displays a heatmap of a given field from a WsiManager object's tile_data.
 
@@ -635,6 +635,7 @@ class WsiManager:
             export (bool): Wether or not to export the thumbnail as a PNG file. Default: [True]
             colormap (str): Matplotlib colormap name used for heatmap. Default: [magma, plasma_r, or PuOr]
             showThumbnail (bool): Wether or not to export the thumbnail with heatmap overlay. Default: [False]
+            img_only (bool): Wether or not to only export heatmap image (Without title and colorbar). Default: [False]
         Output:
             If 'export' is enabled, returns filepath to image, 'None' otherwise.
             Note: Places image in directory: '<outdir>/<wsi_id>/info/' unless a 'outdir' is given.
@@ -693,22 +694,28 @@ class WsiManager:
 
         # Show and/or export plot
         plt.figure()
-        
         if showThumbnail:
             heatmap = transform.resize(heatmap,self.thumbnail.shape[0:2],anti_aliasing=True, preserve_range=True)
             plt.imshow(self.thumbnail)
             plt.imshow(heatmap, cmap=colormap,alpha=0.5*(heatmap>0))
         else:
-            plt.imshow(heatmap, cmap=colormap)
+            #Setup colormap for black background
+            a_cmap = cm.get_cmap(colormap).copy()
+            a_cmap.set_bad(color='black')
+            plt.imshow(heatmap, cmap=a_cmap)
 
         # Set up figure parameters
         plt.axis('off')
         plt.margins(0, 0)
-        plt.title(field)
-        plt.colorbar()
+        if not img_only:
+            plt.title(field)
+            plt.colorbar()
+            padding = 0.1
+        else:
+            padding = 0
 
         if export:
-            plt.savefig(finalPath, bbox_inches='tight', format="png", dpi=600)
+            plt.savefig(finalPath, bbox_inches='tight', pad_inches=padding, format="png", dpi=600)
         if not show:
             plt.close()
         
