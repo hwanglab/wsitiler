@@ -135,10 +135,10 @@ if __name__ == '__main__':
     ap.add_argument('-c', '--cores', default=mp.cpu_count(), type=int, help='Numbers of processes to be spun up in parallel to process each WSI. Default: [%d]' % mp.cpu_count() )
     ap.add_argument('-v', '--verbose', action='count', help='Print updates and reports as program executes. Provide the following number of "v" for the following settings: [Default: Error, v: Warning, vv: Info, vvv: Debug]')
     ap.add_argument('-s', '--split', default="no", choices=["no", "large", "largest"], help='Split tissue chunks into its own WM object depending on their size. Options: [no, large, largest]. Default: [no]')
-    # ap.add_argument('-y', '--dry_run', action='store_true', help='Set this flag to run tile prep and heamaps without tiling the image (Good for testing parameters). Default: [False]')  
-    # args = vars(ap.parse_args())
+    ap.add_argument('-y', '--dry_run', action='store_true', help='Set this flag to run tile prep and heamaps without tiling the image (Good for testing parameters). Default: [False]')  
+    args = vars(ap.parse_args())
     
-    args = vars(ap.parse_args(['-i','/home/clemenj/Data/brain/Mouse_PDX/tiled_wsis/','-o','/home/clemenj/Data/brain/Mouse_PDX/tiled_wsis/','-c','70','-vvvvv','-s','large'])) #TODO: rm
+    # args = vars(ap.parse_args(['-i','/home/clemenj/Data/brain/Mouse_PDX/tiled_wsis/','-o','/home/clemenj/Data/brain/Mouse_PDX/tiled_wsis/','-c','70','-vvvvv','-s','large'])) #TODO: rm
     start_time = time.time()
 
     # Determine Verbosity
