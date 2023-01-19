@@ -624,6 +624,97 @@ class WsiManager:
 
         return(finalPath)
 
+    def export_heatmap(self, field: str, outdir: Path=None, show: bool=False, export: bool=True, colormap: str=None, showThumbnail: bool=False):
+        """
+        Exports and/or displays a heatmap of a given field from a WsiManager object's tile_data.
+
+        Input:
+            field (str): Name of numeric field to be heatmapped (Required)
+            outdir (Path): File path to directory to contain collection of WsiManager output directories. Optional if WsiManager outdir field has been set.
+            show (bool): Wether or not to display the thumbnail as a plot. Default: [False]
+            export (bool): Wether or not to export the thumbnail as a PNG file. Default: [True]
+            colormap (str): Matplotlib colormap name used for heatmap. Default: [magma, plasma_r, or PuOr]
+            showThumbnail (bool): Wether or not to export the thumbnail with heatmap overlay. Default: [False]
+        Output:
+            If 'export' is enabled, returns filepath to image, 'None' otherwise.
+            Note: Places image in directory: '<outdir>/<wsi_id>/info/' unless a 'outdir' is given.
+        """
+        log.info("Exporting Heatmap -- ID: %s, Fields: %s" % (self.wsi_id, field))
+
+        # Validate field selection
+        if field not in self.tile_data.keys()[9:]:
+            raise ValueError("Selected field is not available as an attribute.")
+
+        # Determine field type
+        field_values = self.tile_data[field]
+        if field_values.dtype.kind not in 'iuf':
+            raise ValueError( "Selected field is not numeric")
+
+        # Determine heatmap colormap
+        if colormap is None:
+            num_check = min(field_values) * max(field_values)
+            if num_check >= 0:
+                # Select default sequential colormap
+                colormap = "plasma_r" if showThumbnail else "magma"
+            else:
+                # Select default diverging colormap for H&E overlay 
+                colormap = "PuOr"
+        
+
+        # Prepare heatmap from tile data
+        heatmap = self.tile_data.pivot('index_y','index_x',field).values
+        if len(np.unique(field_values)) == 2:
+            heatmap = heatmap.astype(dtype=bool)
+
+        finalPath = None
+        if export:
+
+            #Find and validate output directory
+            if outdir is None and self.outdir is None:
+                raise ValueError("No output directory has been supplied")
+            elif outdir is not None:
+                if isinstance(outdir,str):
+                    outdir = Path(outdir)
+                elif not issubclass( type(outdir), Path):
+                    raise ValueError("Output path is not a Path or a string.")
+
+                #if output directory has correct format, use it directly.
+                if outdir.suffix == "":
+                    final_outdir = outdir
+                else:
+                    raise ValueError("Output path does not have directory format.")
+            else:
+                final_outdir = self.outdir / self.wsi_id / "info"
+
+            # Generate file path
+            thumb_str = "_thumbnail" if showThumbnail else ""
+            filename_img = self.wsi_id + "___%s_heatmap%s.png" % (field,thumb_str)
+            finalPath = final_outdir / filename_img
+
+        # Show and/or export plot
+        plt.figure()
+        
+        if showThumbnail:
+            heatmap = transform.resize(heatmap,self.thumbnail.shape[0:2],anti_aliasing=True, preserve_range=True)
+            plt.imshow(self.thumbnail)
+            plt.imshow(heatmap, cmap=colormap,alpha=0.5*(heatmap>0))
+        else:
+            plt.imshow(heatmap, cmap=colormap)
+
+        # Set up figure parameters
+        plt.axis('off')
+        plt.margins(0, 0)
+        plt.title(field)
+        plt.colorbar()
+
+        if export:
+            plt.savefig(finalPath, bbox_inches='tight', format="png", dpi=600)
+        if not show:
+            plt.close()
+        
+        return(finalPath)
+
+
     def export_tiles(self, filetype = "png", tile_idx_list: List[str]=[], outdir: Path=None, normalizer=None, ref_img: Path=None, wsi_image: openslide.OpenSlide=None, symlinks=True):
         """
         Import a WSI, split in to tiles, normalize color if requested, and save individual tile files to output directory.
